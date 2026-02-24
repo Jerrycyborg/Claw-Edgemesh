@@ -3,6 +3,7 @@
 First-level TypeScript control-plane + edge-node starter for distributed task execution.
 
 ## What is implemented now
+
 - Versioned contracts (`src/contracts.ts`)
 - In-memory control plane (`src/control-plane.ts`, `src/persistence.ts`)
 - Edge node polling/execute loop (`src/edge-node.ts`)
@@ -20,6 +21,7 @@ First-level TypeScript control-plane + edge-node starter for distributed task ex
 - Tests (`src/test.ts`, `src/phase2b.test.ts`)
 
 ## API surface (current)
+
 - `POST /v1/nodes/register`
 - `POST /v1/nodes/:nodeId/heartbeat`
 - `GET /v1/nodes`
@@ -33,13 +35,24 @@ First-level TypeScript control-plane + edge-node starter for distributed task ex
 - `GET /v1/plugins/telemetry`
 
 ## Quick validation
+
 ```bash
 cd /home/barboza/.openclaw/workspace/openclaw-edgemesh
+npm run lint
+npm run format:check
 npm test
 npm run build
 ```
 
+## Developer experience
+
+- ESLint (flat config): `npm run lint`
+- Prettier: `npm run format` / `npm run format:check`
+- Pre-commit hooks (Husky + lint-staged) run on staged files automatically
+- Contribution guide: see `CONTRIBUTING.md`
+
 ## Next milestones
+
 1. Durable store adapter (Redis/Postgres)
 2. Retries/backoff + DLQ
 3. Node authn/authz (mTLS/JWT)

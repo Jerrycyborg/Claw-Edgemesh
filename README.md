@@ -51,6 +51,7 @@ npm run build
 - Prettier: `npm run format` / `npm run format:check`
 - Pre-commit hooks (Husky + lint-staged) run on staged files automatically
 - Contribution guide: see `CONTRIBUTING.md`
+- Release gate: `npm run release:gate` (AAHP check + tests + typecheck)
 
 ## Documentation
 

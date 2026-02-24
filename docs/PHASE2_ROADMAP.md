@@ -51,6 +51,7 @@ Turn the current scaffold into a reliable multi-node execution alpha for real Op
 
 - Soak tests with 2-3 nodes
 - Failure drills (node crash, long task, bad payload)
+- [x] Phase-2C shell hardening (allowlist, cwd policy, timeout ceiling, denied-command tests)
 - Freeze v0.2-alpha checklist
 
 ## Exit Criteria (v0.2-alpha)

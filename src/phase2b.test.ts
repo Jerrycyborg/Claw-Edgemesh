@@ -19,6 +19,26 @@ test("runWithCapture enforces timeout", async () => {
   assert.equal(out.code, "timeout");
 });
 
+test("runWithCapture applies timeout ceiling", async () => {
+  const out = await runWithCapture("echo", ["ok"], { timeoutMs: 9999999 });
+  assert.equal(out.ok, true);
+  assert.equal(out.timeoutMs, 120000);
+});
+
+test("runWithCapture denies non-allowlisted command", async () => {
+  const denied = await runWithCapture("python3", ["-V"], { timeoutMs: 1000 });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.code, "denied_command");
+  assert.match(denied.error, /command_not_allowlisted/);
+});
+
+test("runWithCapture denies disallowed working directory", async () => {
+  const denied = await runWithCapture("echo", ["ok"], { cwd: "/etc", timeoutMs: 1000 });
+  assert.equal(denied.ok, false);
+  assert.equal(denied.code, "denied_workdir");
+  assert.match(denied.error, /workdir_not_allowed/);
+});
+
 test("orchestrator-run enforces mandatory security gate", async () => {
   const result = await executeOnNode(
     { nodeId: "node-x" },
@@ -38,19 +58,25 @@ test("orchestrator-run enforces mandatory security gate", async () => {
   assert.equal(Boolean(result.execution.securityGate), true);
 });
 
-test("reviewer emits explicit go/no-go", async () => {
+test("reviewer emits explicit code+security go/no-go", async () => {
   const go = reviewExecution({ status: "completed", execution: { ok: true } });
   assert.equal(go.goNoGo, "GO");
+  assert.equal(go.decision, "go");
   assert.equal(go.code, "pass");
   assert.equal(go.security, "pass");
+  assert.equal(go.codeCriticalFindings, 0);
+  assert.equal(go.securityCriticalFindings, 0);
 
   const noGo = reviewExecution({
     status: "failed",
     execution: { ok: false, securityGate: { ok: false } },
   });
   assert.equal(noGo.goNoGo, "NO_GO");
+  assert.equal(noGo.decision, "no-go");
   assert.equal(noGo.code, "fail");
   assert.equal(noGo.security, "fail");
+  assert.equal(noGo.codeCriticalFindings, 1);
+  assert.equal(noGo.securityCriticalFindings, 1);
   assert.ok(noGo.blockers.includes("execution_failed"));
   assert.ok(noGo.blockers.includes("security_gate_failed"));
 });

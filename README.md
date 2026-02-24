@@ -12,9 +12,10 @@ First-level TypeScript control-plane + edge-node starter for distributed task ex
   - claim-time filtering for stale/offline nodes
   - `maxConcurrentTasks` enforcement per node
   - queue/running visibility endpoints
-- Phase-2B execution + orchestration gates:
+- Phase-2B/2C execution + orchestration gates:
   - real executor task kinds (`shell`, `orchestrator-run`, `hook-dispatch`)
   - bounded task timeouts with structured stdout/stderr/error capture
+  - shell hardening: command allowlist + working-directory restrictions + timeout ceiling
   - mandatory security gate in orchestrator flow before completion
   - final reviewer function with explicit critical code+security go/no-go decision
 - Plugin system + telemetry plugin (`src/plugins/*`)

@@ -1,9 +1,13 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 20_000;
+const MAX_TIMEOUT_MS = 120_000;
+const ALLOWED_COMMANDS = new Set(["bash", "node", "npm", "echo"]);
+const ALLOWED_WORKDIRS = [process.cwd(), "/tmp"];
 
 export async function executeOnNode(node, job) {
   const startedAt = new Date().toISOString();
@@ -60,12 +64,43 @@ export async function executeOnNode(node, job) {
 }
 
 export async function runWithCapture(command, args = [], options = {}) {
-  const timeoutMs = Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const cwd = options.cwd || process.cwd();
+  const commandCheck = validateCommand(command);
+  if (!commandCheck.ok) {
+    return {
+      ok: false,
+      code: "denied_command",
+      command,
+      args,
+      timeoutMs: null,
+      stdout: "",
+      stderr: "",
+      error: commandCheck.error,
+      exitCode: null,
+      signal: null,
+    };
+  }
+
+  const cwdCheck = validateCwd(options.cwd || process.cwd());
+  if (!cwdCheck.ok) {
+    return {
+      ok: false,
+      code: "denied_workdir",
+      command,
+      args,
+      timeoutMs: null,
+      stdout: "",
+      stderr: "",
+      error: cwdCheck.error,
+      exitCode: null,
+      signal: null,
+    };
+  }
+
+  const timeoutMs = boundedTimeoutMs(options.timeoutMs);
 
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
-      cwd,
+      cwd: cwdCheck.cwd,
       timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
       env: { ...process.env, ...(options.env || {}) },
@@ -185,4 +220,34 @@ function classifyExecError(err) {
 function trim(v) {
   if (!v) return "";
   return String(v).slice(0, 8000);
+}
+
+function boundedTimeoutMs(input) {
+  const candidate = Number(input ?? DEFAULT_TIMEOUT_MS);
+  if (!Number.isFinite(candidate) || candidate <= 0) return DEFAULT_TIMEOUT_MS;
+  return Math.min(candidate, MAX_TIMEOUT_MS);
+}
+
+function validateCommand(command) {
+  if (!command || typeof command !== "string") {
+    return { ok: false, error: "command_required" };
+  }
+  if (!ALLOWED_COMMANDS.has(command)) {
+    return { ok: false, error: `command_not_allowlisted:${command}` };
+  }
+  return { ok: true };
+}
+
+function validateCwd(inputCwd) {
+  const cwd = path.resolve(String(inputCwd || process.cwd()));
+  const allowed = ALLOWED_WORKDIRS.some((base) => {
+    const normalizedBase = path.resolve(base);
+    return cwd === normalizedBase || cwd.startsWith(`${normalizedBase}${path.sep}`);
+  });
+
+  if (!allowed) {
+    return { ok: false, error: `workdir_not_allowed:${cwd}` };
+  }
+
+  return { ok: true, cwd };
 }

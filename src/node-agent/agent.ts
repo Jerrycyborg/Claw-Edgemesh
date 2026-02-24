@@ -2,24 +2,50 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-export async function executeOnNode(node, job) {
+type RunOptions = {
+  timeoutMs?: number;
+  cwd?: string;
+  env?: Record<string, string>;
+};
+
+type CaptureResult = {
+  ok: boolean;
+  code: string;
+  command: string;
+  args: string[];
+  timeoutMs: number;
+  stdout: string;
+  stderr: string;
+  error: string;
+  exitCode?: number | null;
+  signal?: string | null;
+};
+
+type NodeRef = { nodeId: string };
+
+type JobRef = {
+  jobId: string;
+  taskType: string;
+  payload?: Record<string, unknown>;
+};
+
+export async function executeOnNode(node: NodeRef, job: JobRef) {
   const startedAt = new Date().toISOString();
 
   try {
-    let execution;
+    let execution: Record<string, unknown>;
 
     switch (job.taskType) {
       case "shell":
-        execution = await runShell(job.payload || {});
+        execution = await runShell(job.payload ?? {});
         break;
       case "orchestrator-run":
-        execution = await runOrchestratorWithSecurityGate(job.payload || {});
+        execution = await runOrchestratorWithSecurityGate(job.payload ?? {});
         break;
       case "hook-dispatch":
-        execution = await runHookDispatch(job.payload || {});
+        execution = await runHookDispatch(job.payload ?? {});
         break;
       default:
         execution = {
@@ -31,11 +57,13 @@ export async function executeOnNode(node, job) {
         };
     }
 
+    const ok = Boolean((execution as { ok?: boolean }).ok);
+
     return {
       nodeId: node.nodeId,
       jobId: job.jobId,
       taskType: job.taskType,
-      status: execution.ok ? "completed" : "failed",
+      status: ok ? "completed" : "failed",
       startedAt,
       completedAt: new Date().toISOString(),
       execution,
@@ -59,7 +87,11 @@ export async function executeOnNode(node, job) {
   }
 }
 
-export async function runWithCapture(command, args = [], options = {}) {
+export async function runWithCapture(
+  command: string,
+  args: string[] = [],
+  options: RunOptions = {}
+): Promise<CaptureResult> {
   const timeoutMs = Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const cwd = options.cwd || process.cwd();
 
@@ -82,30 +114,33 @@ export async function runWithCapture(command, args = [], options = {}) {
       error: "",
       exitCode: 0,
     };
-  } catch (err) {
+  } catch (err: any) {
     return {
       ok: false,
       code: classifyExecError(err),
       command,
       args,
       timeoutMs,
-      stdout: trim(err.stdout),
-      stderr: trim(err.stderr),
-      error: err.message,
-      exitCode: typeof err.code === "number" ? err.code : null,
-      signal: err.signal || null,
+      stdout: trim(err?.stdout),
+      stderr: trim(err?.stderr),
+      error: String(err?.message ?? err),
+      exitCode: typeof err?.code === "number" ? err.code : null,
+      signal: err?.signal || null,
     };
   }
 }
 
-export async function runSecurityGate({ cwd, timeoutMs = 90_000 } = {}) {
+export async function runSecurityGate({
+  cwd,
+  timeoutMs = 90_000,
+}: { cwd?: string; timeoutMs?: number } = {}) {
   return runWithCapture("bash", ["-lc", "npm run aahp:check && npm test && npm run typecheck"], {
     cwd,
     timeoutMs,
   });
 }
 
-async function runShell(payload) {
+async function runShell(payload: Record<string, unknown>) {
   if (!payload.command) {
     return {
       ok: false,
@@ -115,16 +150,18 @@ async function runShell(payload) {
       error: "shell payload requires command",
     };
   }
-
   return runWithCapture("bash", ["-lc", String(payload.command)], {
-    cwd: payload.cwd,
-    timeoutMs: payload.timeoutMs,
+    cwd: payload.cwd as string | undefined,
+    timeoutMs: payload.timeoutMs as number | undefined,
   });
 }
 
-async function runOrchestratorWithSecurityGate(payload) {
-  const cwd = payload.cwd || process.cwd();
-  const securityGate = await runSecurityGate({ cwd, timeoutMs: payload.securityTimeoutMs });
+async function runOrchestratorWithSecurityGate(payload: Record<string, unknown>) {
+  const cwd = (payload.cwd as string | undefined) || process.cwd();
+  const securityGate = await runSecurityGate({
+    cwd,
+    timeoutMs: payload.securityTimeoutMs as number | undefined,
+  });
 
   if (!securityGate.ok) {
     return {
@@ -150,16 +187,13 @@ async function runOrchestratorWithSecurityGate(payload) {
 
   const run = await runWithCapture("bash", ["-lc", String(payload.command)], {
     cwd,
-    timeoutMs: payload.timeoutMs,
+    timeoutMs: payload.timeoutMs as number | undefined,
   });
 
-  return {
-    ...run,
-    securityGate,
-  };
+  return { ...run, securityGate };
 }
 
-async function runHookDispatch(payload) {
+async function runHookDispatch(payload: Record<string, unknown>) {
   if (!payload.eventJsonPath) {
     return {
       ok: false,
@@ -169,20 +203,23 @@ async function runHookDispatch(payload) {
       error: "hook-dispatch payload requires eventJsonPath",
     };
   }
-
-  return runWithCapture("node", ["src/cli.js", "hook", "--event-file", payload.eventJsonPath], {
-    cwd: payload.cwd,
-    timeoutMs: payload.timeoutMs,
-  });
+  return runWithCapture(
+    "node",
+    ["src/cli.js", "hook", "--event-file", String(payload.eventJsonPath)],
+    {
+      cwd: payload.cwd as string | undefined,
+      timeoutMs: payload.timeoutMs as number | undefined,
+    }
+  );
 }
 
-function classifyExecError(err) {
+function classifyExecError(err: any) {
   if (err?.killed || err?.signal === "SIGTERM") return "timeout";
   if (typeof err?.code === "number") return "nonzero_exit";
   return "exec_error";
 }
 
-function trim(v) {
+function trim(v: unknown) {
   if (!v) return "";
   return String(v).slice(0, 8000);
 }

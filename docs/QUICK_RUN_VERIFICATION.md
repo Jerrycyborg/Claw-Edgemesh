@@ -11,6 +11,7 @@ npm run verify:quick
 ```
 
 Result:
+
 - ✅ Tests passed (`2/2`)
 - ✅ TypeScript build passed (`tsc -p tsconfig.json`)
 
@@ -22,8 +23,15 @@ curl http://127.0.0.1:8790/health
 ```
 
 Result:
+
 - ✅ Health endpoint returned: `{"ok":true}`
 
 ## Notes
-- Verification currently covers API-level smoke and compile checks.
+
+- Verification now includes reliability + Phase-2B tests:
+  - stale/offline scheduling behavior
+  - maxConcurrentTasks enforcement
+  - queue/running visibility endpoints
+  - mandatory security gate and explicit final reviewer go/no-go checks
+  - executor timeout and structured stdout/stderr/error capture
 - End-to-end multi-node and persistence durability tests remain future work.

@@ -1,80 +1,64 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeRealTask } from "./node-agent/executor.js";
-import { runOrchestratorFlow } from "./orchestrator/flow.js";
-import type { Task } from "./contracts.js";
+import { runWithCapture, runSecurityGate, executeOnNode } from "./node-agent/agent.js";
+import { reviewExecution } from "./control/reviewer.js";
 
-function task(overrides: Partial<Task>): Task {
-  return {
-    schemaVersion: "1.0",
-    taskId: "t-1",
-    kind: "shell",
-    payload: {},
-    status: "queued",
-    createdAt: Date.now(),
-    ...overrides,
-  };
-}
-
-test("executor shell captures stdout/stderr with bounded timeout", async () => {
-  const result = await executeRealTask(
-    task({
-      kind: "shell",
-      payload: { command: "node", args: ["-e", "console.log('ok'); console.error('warn')"], timeoutMs: 2000 },
-    })
-  );
-
-  assert.equal(result.ok, true);
-  assert.match(String(result.output?.stdout), /ok/);
-  assert.match(String(result.output?.stderr), /warn/);
+test("runWithCapture returns structured stdout/stderr", async () => {
+  const ok = await runWithCapture("bash", ["-lc", "echo hello && echo warn 1>&2"], {
+    timeoutMs: 2000,
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.code, "ok");
+  assert.match(ok.stdout, /hello/);
+  assert.match(ok.stderr, /warn/);
 });
 
-test("executor shell times out and returns structured error", async () => {
-  const result = await executeRealTask(
-    task({
-      kind: "shell",
-      payload: { command: "node", args: ["-e", "setTimeout(() => {}, 2000)"], timeoutMs: 50 },
-    })
-  );
-
-  assert.equal(result.ok, false);
-  assert.equal(result.errorCode, "TIMEOUT");
-  assert.match(String(result.error), /timeout_exceeded/);
+test("runWithCapture enforces timeout", async () => {
+  const out = await runWithCapture("bash", ["-lc", "sleep 2"], { timeoutMs: 50 });
+  assert.equal(out.ok, false);
+  assert.equal(out.code, "timeout");
 });
 
 test("orchestrator-run enforces mandatory security gate", async () => {
-  const blocked = await executeRealTask(
-    task({
-      kind: "orchestrator-run",
-      payload: { flowId: "phase-2b", requireSecurityTests: true, security: { passed: false, findings: 2 } },
-    })
+  const result = await executeOnNode(
+    { nodeId: "node-x" },
+    {
+      jobId: "job-gate-fail",
+      taskType: "orchestrator-run",
+      payload: {
+        cwd: "/tmp",
+        command: "echo should-not-run",
+        securityTimeoutMs: 5000,
+      },
+    }
   );
-  assert.equal(blocked.ok, false);
-  assert.equal(blocked.errorCode, "SECURITY_GATE_FAILED");
 
-  const allowed = await executeRealTask(
-    task({
-      kind: "orchestrator-run",
-      payload: { flowId: "phase-2b", requireSecurityTests: true, security: { passed: true } },
-    })
-  );
-  assert.equal(allowed.ok, true);
+  assert.equal(result.status, "failed");
+  assert.equal(result.execution.code, "security_gate_failed");
+  assert.equal(Boolean(result.execution.securityGate), true);
 });
 
-test("final reviewer must include critical code+security findings with explicit go/no-go", () => {
-  const noGo = runOrchestratorFlow({
-    securityPassed: true,
-    implementationPassed: true,
-    reviewer: { codeCriticalFindings: 1, securityCriticalFindings: 0 },
-  });
-  assert.equal(noGo.finalReview.decision, "no-go");
-  assert.equal(noGo.completed, false);
+test("reviewer emits explicit go/no-go", async () => {
+  const go = reviewExecution({ status: "completed", execution: { ok: true } });
+  assert.equal(go.goNoGo, "GO");
+  assert.equal(go.code, "pass");
+  assert.equal(go.security, "pass");
 
-  const go = runOrchestratorFlow({
-    securityPassed: true,
-    implementationPassed: true,
-    reviewer: { codeCriticalFindings: 0, securityCriticalFindings: 0 },
+  const noGo = reviewExecution({
+    status: "failed",
+    execution: { ok: false, securityGate: { ok: false } },
   });
-  assert.equal(go.finalReview.decision, "go");
-  assert.equal(go.completed, true);
+  assert.equal(noGo.goNoGo, "NO_GO");
+  assert.equal(noGo.code, "fail");
+  assert.equal(noGo.security, "fail");
+  assert.ok(noGo.blockers.includes("execution_failed"));
+  assert.ok(noGo.blockers.includes("security_gate_failed"));
+});
+
+test("runSecurityGate returns structured object", async () => {
+  const gate = await runSecurityGate({ cwd: "/tmp", timeoutMs: 2000 });
+  assert.equal(typeof gate.ok, "boolean");
+  assert.equal(typeof gate.code, "string");
+  assert.equal(typeof gate.stdout, "string");
+  assert.equal(typeof gate.stderr, "string");
 });

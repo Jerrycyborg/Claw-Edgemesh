@@ -27,17 +27,37 @@ if (missing.length > 0) {
 }
 
 const roadmap = fs.readFileSync(path.join(root, "docs/PHASE2_ROADMAP.md"), "utf8");
-const mustContain = [
-  "mandatory security",
-  "release gate",
-  "observability",
-  "failure drills"
-];
+const mustContain = ["mandatory security", "release gate", "observability", "failure drills"];
 
 const missingPhrases = mustContain.filter((p) => !roadmap.toLowerCase().includes(p));
 if (missingPhrases.length > 0) {
   console.error("AAHP check: FAIL");
   for (const p of missingPhrases) console.error(`- roadmap missing phrase: ${p}`);
+  process.exit(1);
+}
+
+const controlPlane = fs.readFileSync(path.join(root, "src/control-plane.ts"), "utf8");
+const requiredRoutes = [
+  '/v1/auth/job-token',
+  '/v1/tasks',
+  '/v1/observability/queue-depth',
+  '/v1/observability/node-health-timeline',
+  '/v1/runs/summary'
+];
+
+const missingRoutes = requiredRoutes.filter((r) => !controlPlane.includes(r));
+if (missingRoutes.length > 0) {
+  console.error("AAHP check: FAIL");
+  for (const r of missingRoutes) console.error(`- missing route: ${r}`);
+  process.exit(1);
+}
+
+const securitySource = fs.readFileSync(path.join(root, "src/security.ts"), "utf8");
+const requiredSecurityMarkers = ["token_replay", "token_expired", "bootstrapSecret"];
+const missingSecurityMarkers = requiredSecurityMarkers.filter((m) => !securitySource.includes(m));
+if (missingSecurityMarkers.length > 0) {
+  console.error("AAHP check: FAIL");
+  for (const m of missingSecurityMarkers) console.error(`- missing security marker: ${m}`);
   process.exit(1);
 }
 

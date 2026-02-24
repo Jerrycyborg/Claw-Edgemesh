@@ -11,7 +11,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "aahp:check": "node -e \"console.log('AAHP check: PASS (stub)')\"",
+    "aahp:check": "node scripts/aahp-check.mjs",
     "verify:quick": "npm test && npm run build",
     "release:gate": "npm run aahp:check && npm test && npm run typecheck",
     "dev:control": "tsx src/control-plane.ts",

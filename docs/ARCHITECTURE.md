@@ -1,52 +1,61 @@
-# OpenClaw EdgeMesh — Architecture (Phase-2 snapshot)
+# OpenClaw EdgeMesh — Architecture (Concise)
 
-## Control-plane modules
+## System shape
 
-1. **Contracts** (`src/contracts.ts`)
-   - typed request/response payloads
-   - node freshness + task lifecycle types
-2. **Store** (`src/persistence.ts`)
-   - in-memory node/task/result state
-   - heartbeat freshness evaluation (`healthy`/`degraded`/`offline`)
-   - claim lease timeout requeue
-3. **API** (`src/control-plane.ts`)
-   - node registration + heartbeat ingestion
-   - task enqueue/claim/ack/result
-   - visibility endpoints for queued/running tasks
-4. **Plugin Runtime** (`src/plugins/*`)
-   - pluggable control-plane plugin contract
-   - built-in telemetry plugin (events + request counters)
-   - telemetry endpoint: `GET /v1/plugins/telemetry`
-5. **Node Agent / Executor** (`src/node-agent/agent.js`, `src/edge-node.ts`)
-   - register + periodic heartbeat
-   - task claim + execute handlers + result publish
-   - real task executors with bounded timeouts + structured capture
-   - mandatory security gate for orchestrator-run tasks
-6. **Reviewer** (`src/control/reviewer.js`)
-   - explicit `GO` / `NO_GO` decision using code + security outcomes
+EdgeMesh has two runtime sides:
 
-## Scheduling behavior (current)
+1. **Control Plane** (API + scheduler + state)
+2. **Edge Node Agent** (heartbeat + claim + execute + result)
 
-- Claims are allowed only when node freshness is `healthy`.
-- Nodes with stale heartbeats (`degraded`/`offline`) are skipped.
-- Per-node `maxConcurrentTasks` is enforced against claimed/running tasks.
-- Expired claims are re-queued via claim TTL.
+## Control plane modules
 
-## Visibility endpoints
+- **Contracts** (`src/contracts.ts`)
+  - typed payloads for nodes, tasks, results
+- **Store** (`src/persistence.ts`)
+  - node/task/result state
+  - freshness derivation: `healthy | degraded | offline`
+  - claim lease requeue (TTL)
+- **API** (`src/control-plane.ts`)
+  - nodes: register/heartbeat/list
+  - tasks: enqueue/claim/ack/result/get
+  - visibility: queue/running
+- **Plugin runtime** (`src/plugins/*`)
+  - pluggable hooks + telemetry endpoint
 
-- `GET /v1/tasks/queue` → queued tasks
-- `GET /v1/tasks/running` → claimed + running tasks
-- `GET /v1/nodes` → node list including computed `freshnessState`
+## Execution path
 
-## Current tradeoffs
+1. Node registers
+2. Node heartbeats periodically
+3. Tasks are enqueued
+4. Node claims eligible task
+5. Node acknowledges running
+6. Node executes and posts result
 
-- In-memory state (non-durable)
-- Pull-based scheduler (simple NAT model, higher claim latency)
-- Single control-plane instance (no HA)
+## Scheduling contracts (current)
 
-## Next hardening steps
+- Claim only when node is `healthy`
+- Skip stale/offline nodes
+- Enforce `maxConcurrentTasks`
+- Honor `targetNodeId` and `requiredTags`
 
-- Durable queue + persistence adapter
-- Authn/authz for node and task submitter identity
-- Retry/backoff/DLQ policies
-- Metrics/tracing and SLO alerting
+## Reliability posture
+
+- ✅ claim TTL + requeue
+- ✅ queue/running visibility endpoints
+- ✅ bounded execution timeouts
+- ✅ structured stdout/stderr/error capture
+- ⚠️ in-memory state only (no durability yet)
+- ⚠️ single control-plane instance (no HA)
+
+## Security posture (current)
+
+- Mandatory security gate for `orchestrator-run`
+- Explicit final reviewer go/no-go path
+- Shell execution path exists; production hardening should keep strict allowlist/sandbox
+
+## Next architecture moves
+
+1. Durable store adapter (Redis/Postgres)
+2. Retry/backoff + DLQ
+3. Node/task authn-authz (mTLS/JWT)
+4. Metrics/tracing + SLO alerting

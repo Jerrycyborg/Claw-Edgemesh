@@ -52,6 +52,13 @@ npm run build
 - Pre-commit hooks (Husky + lint-staged) run on staged files automatically
 - Contribution guide: see `CONTRIBUTING.md`
 
+## Documentation
+
+- Architecture: `docs/ARCHITECTURE.md`
+- API reference: `docs/API.md`
+- Extending guide: `docs/EXTENDING.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
+
 ## Next milestones
 
 1. Durable store adapter (Redis/Postgres)

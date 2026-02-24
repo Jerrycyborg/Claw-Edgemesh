@@ -18,7 +18,7 @@ function fromB64(data: string) {
 
 export class JobTokenManager {
   private secret: string;
-  private usedJti = new Set<string>();
+  private usedJtiExp = new Map<string, number>();
 
   constructor(secret?: string) {
     this.secret = secret ?? process.env.EDGEMESH_JOB_TOKEN_SECRET ?? "dev-secret";
@@ -51,8 +51,10 @@ export class JobTokenManager {
       return { ok: false as const, error: "token_payload_invalid" };
     }
 
+    this.pruneReplayCache();
+
     if (Date.now() > payload.exp) return { ok: false as const, error: "token_expired" };
-    if (this.usedJti.has(payload.jti)) return { ok: false as const, error: "token_replay" };
+    if (this.usedJtiExp.has(payload.jti)) return { ok: false as const, error: "token_replay" };
     if (payload.jobId !== expected.jobId)
       return { ok: false as const, error: "token_job_mismatch" };
     if (
@@ -63,8 +65,19 @@ export class JobTokenManager {
       return { ok: false as const, error: "token_node_mismatch" };
     }
 
-    this.usedJti.add(payload.jti);
+    this.usedJtiExp.set(payload.jti, payload.exp);
     return { ok: true as const, payload };
+  }
+
+  replayCacheSize() {
+    this.pruneReplayCache();
+    return this.usedJtiExp.size;
+  }
+
+  private pruneReplayCache(now = Date.now()) {
+    for (const [jti, exp] of this.usedJtiExp.entries()) {
+      if (exp <= now) this.usedJtiExp.delete(jti);
+    }
   }
 }
 

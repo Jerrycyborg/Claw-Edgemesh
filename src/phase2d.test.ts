@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildControlPlane } from "./control-plane.js";
 import { executeRealTask } from "./node-agent/executor.js";
+import { JobTokenManager } from "./security.js";
 import type { Task } from "./contracts.js";
 
 async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: string) {
@@ -173,6 +174,24 @@ test("observability endpoints expose queue depth/latency/success ratio", async (
   );
 
   await app.close();
+});
+
+test("job token manager prunes replay cache after expiration", async () => {
+  const mgr = new JobTokenManager("test-secret");
+  const token = mgr.issue({ jobId: "job-ttl", exp: Date.now() + 30 });
+
+  const first = mgr.verify(token, { jobId: "job-ttl" });
+  assert.equal(first.ok, true);
+  assert.equal(mgr.replayCacheSize(), 1);
+
+  await new Promise((r) => setTimeout(r, 40));
+
+  // Cache entry should be pruned once expired.
+  assert.equal(mgr.replayCacheSize(), 0);
+
+  const second = mgr.verify(token, { jobId: "job-ttl" });
+  assert.equal(second.ok, false);
+  assert.equal(second.error, "token_expired");
 });
 
 test("failure drills: invalid payload + timeout + crash", async () => {

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EdgeMeshJob",
+  "type": "object",
+  "required": ["jobId", "taskType", "constraints", "payload"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "taskType": { "type": "string", "enum": ["llm", "embedding", "tool", "workflow"] },
+    "constraints": {
+      "type": "object",
+      "required": ["privacy", "maxLatencyMs"],
+      "properties": {
+        "privacy": { "type": "string", "enum": ["local-only", "trusted-mesh", "cloud-ok"] },
+        "maxLatencyMs": { "type": "number" },
+        "requiresGpu": { "type": "boolean", "default": false },
+        "requiresNpu": { "type": "boolean", "default": false }
+      }
+    },
+    "payload": { "type": "object" }
+  }
+}

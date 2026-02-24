@@ -1,0 +1,23 @@
+{
+  "name": "openclaw-edgemesh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/test.ts src/**/*.test.ts",
+    "verify:quick": "npm test && npm run build",
+    "dev:control": "tsx src/control-plane.ts",
+    "dev:node": "tsx src/edge-node.ts",
+    "start:control": "node dist/control-plane.js",
+    "start:node": "node dist/edge-node.js"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

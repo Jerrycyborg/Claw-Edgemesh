@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
-const ALLOWED_COMMANDS = new Set(["bash", "node", "npm", "echo"]);
+const ALLOWED_COMMANDS = new Set(["node", "npm", "echo", "true", "false"]);
 const ALLOWED_WORKDIRS = [process.cwd(), "/tmp"];
 
 type RunOptions = {
@@ -169,23 +169,30 @@ export async function runSecurityGate({
   cwd,
   timeoutMs = 90_000,
 }: { cwd?: string; timeoutMs?: number } = {}) {
-  return runWithCapture("bash", ["-lc", "npm run aahp:check && npm test && npm run typecheck"], {
-    cwd,
-    timeoutMs,
-  });
+  const first = await runWithCapture("npm", ["run", "aahp:check"], { cwd, timeoutMs });
+  if (!first.ok) return first;
+
+  const second = await runWithCapture("npm", ["test"], { cwd, timeoutMs });
+  if (!second.ok) return second;
+
+  return runWithCapture("npm", ["run", "typecheck"], { cwd, timeoutMs });
 }
 
 async function runShell(payload: Record<string, unknown>) {
-  if (!payload.command) {
+  const binary = typeof payload.binary === "string" ? payload.binary : undefined;
+  const args = Array.isArray(payload.args) ? payload.args.map((v) => String(v)) : [];
+
+  if (!binary) {
     return {
       ok: false,
       code: "invalid_payload",
       stdout: "",
       stderr: "",
-      error: "shell payload requires command",
+      error: "shell payload requires binary",
     };
   }
-  return runWithCapture("bash", ["-lc", String(payload.command)], {
+
+  return runWithCapture(binary, args, {
     cwd: payload.cwd as string | undefined,
     timeoutMs: payload.timeoutMs as number | undefined,
   });
@@ -209,18 +216,21 @@ async function runOrchestratorWithSecurityGate(payload: Record<string, unknown>)
     };
   }
 
-  if (!payload.command) {
+  const binary = typeof payload.binary === "string" ? payload.binary : undefined;
+  const args = Array.isArray(payload.args) ? payload.args.map((v) => String(v)) : [];
+
+  if (!binary) {
     return {
       ok: false,
       code: "invalid_payload",
       stdout: "",
       stderr: "",
-      error: "orchestrator-run payload requires command",
+      error: "orchestrator-run payload requires binary",
       securityGate,
     };
   }
 
-  const run = await runWithCapture("bash", ["-lc", String(payload.command)], {
+  const run = await runWithCapture(binary, args, {
     cwd,
     timeoutMs: payload.timeoutMs as number | undefined,
   });

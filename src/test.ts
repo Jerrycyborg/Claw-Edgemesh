@@ -341,3 +341,60 @@ test("telemetry plugin endpoint exposes counters and events", async () => {
 
   await app.close();
 });
+
+test("tasks list filter and runs summary endpoints", async () => {
+  const app = buildControlPlane();
+  await app.ready();
+
+  await app.inject({
+    method: "POST",
+    url: "/v1/nodes/register",
+    payload: {
+      schemaVersion: "1.0",
+      nodeId: "node-z",
+      capabilities: { tags: ["linux"], maxConcurrentTasks: 2 },
+    },
+  });
+
+  await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-z/heartbeat",
+    payload: {
+      schemaVersion: "1.0",
+      nodeId: "node-z",
+      ts: Date.now(),
+      status: "healthy",
+      load: 0,
+      runningTasks: 0,
+    },
+  });
+
+  for (const id of ["sum-1", "sum-2"]) {
+    await app.inject({
+      method: "POST",
+      url: "/v1/tasks",
+      payload: { taskId: id, kind: "echo", payload: { id }, requiredTags: ["linux"] },
+    });
+  }
+
+  const claim = await app.inject({ method: "POST", url: "/v1/nodes/node-z/tasks/claim" });
+  const claimedTaskId = claim.json().task.taskId;
+  await app.inject({ method: "POST", url: `/v1/tasks/${claimedTaskId}/ack` });
+
+  const queuedOnly = await app.inject({ method: "GET", url: "/v1/tasks?status=queued" });
+  assert.equal(queuedOnly.statusCode, 200);
+  assert.equal(queuedOnly.json().tasks.length, 1);
+
+  const summary = await app.inject({ method: "GET", url: "/v1/runs/summary" });
+  assert.equal(summary.statusCode, 200);
+  assert.equal(summary.json().totals.running, 1);
+  assert.equal(summary.json().totals.queued, 1);
+  assert.equal(summary.json().metrics.queueDepth, 1);
+  assert.equal(summary.json().metrics.successRatio, null);
+  assert.ok(
+    summary.json().metrics.avgClaimLatencyMs === null ||
+      summary.json().metrics.avgClaimLatencyMs >= 0
+  );
+
+  await app.close();
+});

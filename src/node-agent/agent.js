@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
-const ALLOWED_COMMANDS = new Set(["bash", "node", "npm", "echo"]);
+const ALLOWED_COMMANDS = new Set(["node", "npm", "echo"]);
 const ALLOWED_WORKDIRS = [process.cwd(), "/tmp"];
 
 export async function executeOnNode(node, job) {
@@ -66,34 +66,16 @@ export async function executeOnNode(node, job) {
 export async function runWithCapture(command, args = [], options = {}) {
   const commandCheck = validateCommand(command);
   if (!commandCheck.ok) {
-    return {
-      ok: false,
-      code: "denied_command",
-      command,
-      args,
-      timeoutMs: null,
-      stdout: "",
-      stderr: "",
-      error: commandCheck.error,
-      exitCode: null,
-      signal: null,
-    };
+    return deniedResult("denied_command", command, args, commandCheck.error);
   }
 
   const cwdCheck = validateCwd(options.cwd || process.cwd());
   if (!cwdCheck.ok) {
-    return {
-      ok: false,
-      code: "denied_workdir",
-      command,
-      args,
-      timeoutMs: null,
-      stdout: "",
-      stderr: "",
-      error: cwdCheck.error,
-      exitCode: null,
-      signal: null,
-    };
+    return deniedResult("denied_workdir", command, args, cwdCheck.error);
+  }
+
+  if (!Array.isArray(args) || !args.every((a) => typeof a === "string")) {
+    return deniedResult("invalid_args", command, args, "args_must_be_string_array");
   }
 
   const timeoutMs = boundedTimeoutMs(options.timeoutMs);
@@ -134,24 +116,35 @@ export async function runWithCapture(command, args = [], options = {}) {
 }
 
 export async function runSecurityGate({ cwd, timeoutMs = 90_000 } = {}) {
-  return runWithCapture("bash", ["-lc", "npm run aahp:check && npm test && npm run typecheck"], {
-    cwd,
-    timeoutMs,
-  });
+  const gateTimeout = boundedTimeoutMs(timeoutMs);
+
+  const checks = [["run", "aahp:check"], ["test"], ["run", "typecheck"]];
+
+  for (const stepArgs of checks) {
+    const result = await runWithCapture("npm", stepArgs, { cwd, timeoutMs: gateTimeout });
+    if (!result.ok) return result;
+  }
+
+  return {
+    ok: true,
+    code: "ok",
+    command: "npm",
+    args: ["run", "aahp:check", "&&", "test", "&&", "run", "typecheck"],
+    timeoutMs: gateTimeout,
+    stdout: "security_gate_passed",
+    stderr: "",
+    error: "",
+    exitCode: 0,
+  };
 }
 
 async function runShell(payload) {
-  if (!payload.command) {
-    return {
-      ok: false,
-      code: "invalid_payload",
-      stdout: "",
-      stderr: "",
-      error: "shell payload requires command",
-    };
+  if (!payload.binary) {
+    return invalidPayload("shell payload requires binary");
   }
 
-  return runWithCapture("bash", ["-lc", String(payload.command)], {
+  const args = Array.isArray(payload.args) ? payload.args.map(String) : [];
+  return runWithCapture(String(payload.binary), args, {
     cwd: payload.cwd,
     timeoutMs: payload.timeoutMs,
   });
@@ -172,18 +165,15 @@ async function runOrchestratorWithSecurityGate(payload) {
     };
   }
 
-  if (!payload.command) {
+  if (!payload.binary) {
     return {
-      ok: false,
-      code: "invalid_payload",
-      stdout: "",
-      stderr: "",
-      error: "orchestrator-run payload requires command",
+      ...invalidPayload("orchestrator-run payload requires binary"),
       securityGate,
     };
   }
 
-  const run = await runWithCapture("bash", ["-lc", String(payload.command)], {
+  const args = Array.isArray(payload.args) ? payload.args.map(String) : [];
+  const run = await runWithCapture(String(payload.binary), args, {
     cwd,
     timeoutMs: payload.timeoutMs,
   });
@@ -196,19 +186,38 @@ async function runOrchestratorWithSecurityGate(payload) {
 
 async function runHookDispatch(payload) {
   if (!payload.eventJsonPath) {
-    return {
-      ok: false,
-      code: "invalid_payload",
-      stdout: "",
-      stderr: "",
-      error: "hook-dispatch payload requires eventJsonPath",
-    };
+    return invalidPayload("hook-dispatch payload requires eventJsonPath");
   }
 
   return runWithCapture("node", ["src/cli.js", "hook", "--event-file", payload.eventJsonPath], {
     cwd: payload.cwd,
     timeoutMs: payload.timeoutMs,
   });
+}
+
+function deniedResult(code, command, args, error) {
+  return {
+    ok: false,
+    code,
+    command,
+    args,
+    timeoutMs: null,
+    stdout: "",
+    stderr: "",
+    error,
+    exitCode: null,
+    signal: null,
+  };
+}
+
+function invalidPayload(message) {
+  return {
+    ok: false,
+    code: "invalid_payload",
+    stdout: "",
+    stderr: "",
+    error: message,
+  };
 }
 
 function classifyExecError(err) {

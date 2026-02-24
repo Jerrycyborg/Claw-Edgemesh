@@ -1,4 +1,11 @@
-import type { HeartbeatRequest, NodeFreshnessState, NodeView, RegisterNodeRequest, Task, TaskResult } from "./contracts.js";
+import type {
+  HeartbeatRequest,
+  NodeFreshnessState,
+  NodeView,
+  RegisterNodeRequest,
+  Task,
+  TaskResult,
+} from "./contracts.js";
 
 type NodeRecord = RegisterNodeRequest & { lastHeartbeat?: HeartbeatRequest };
 
@@ -14,6 +21,7 @@ export interface ControlPlaneStore {
   getTask(taskId: string): Task | undefined;
   listQueuedTasks(): Task[];
   listRunningTasks(): Task[];
+  listTasks(status?: Task["status"]): Task[];
 
   setTaskResult(result: TaskResult): void;
   getTaskResult(taskId: string): TaskResult | undefined;
@@ -28,7 +36,9 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
   private readonly heartbeatHealthyMs: number;
   private readonly heartbeatDegradedMs: number;
 
-  constructor(options: { claimTtlMs?: number; heartbeatHealthyMs?: number; heartbeatDegradedMs?: number } = {}) {
+  constructor(
+    options: { claimTtlMs?: number; heartbeatHealthyMs?: number; heartbeatDegradedMs?: number } = {}
+  ) {
     this.claimTtlMs = options.claimTtlMs ?? 30_000;
     this.heartbeatHealthyMs = options.heartbeatHealthyMs ?? 10_000;
     this.heartbeatDegradedMs = options.heartbeatDegradedMs ?? 30_000;
@@ -119,7 +129,14 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
   }
 
   listRunningTasks(): Task[] {
-    return [...this.tasks.values()].filter((task) => task.status === "claimed" || task.status === "running");
+    return [...this.tasks.values()].filter(
+      (task) => task.status === "claimed" || task.status === "running"
+    );
+  }
+
+  listTasks(status?: Task["status"]): Task[] {
+    if (!status) return [...this.tasks.values()];
+    return [...this.tasks.values()].filter((task) => task.status === status);
   }
 
   setTaskResult(result: TaskResult): void {

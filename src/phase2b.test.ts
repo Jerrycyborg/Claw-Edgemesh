@@ -4,7 +4,7 @@ import { runWithCapture, runSecurityGate, executeOnNode } from "./node-agent/age
 import { reviewExecution } from "./control/reviewer.js";
 
 test("runWithCapture returns structured stdout/stderr", async () => {
-  const ok = await runWithCapture("bash", ["-lc", "echo hello && echo warn 1>&2"], {
+  const ok = await runWithCapture("node", ["-e", "console.log('hello'); console.error('warn')"], {
     timeoutMs: 2000,
   });
   assert.equal(ok.ok, true);
@@ -14,7 +14,7 @@ test("runWithCapture returns structured stdout/stderr", async () => {
 });
 
 test("runWithCapture enforces timeout", async () => {
-  const out = await runWithCapture("bash", ["-lc", "sleep 2"], { timeoutMs: 50 });
+  const out = await runWithCapture("node", ["-e", "setTimeout(() => {}, 2000)"], { timeoutMs: 50 });
   assert.equal(out.ok, false);
   assert.equal(out.code, "timeout");
 });
@@ -39,6 +39,42 @@ test("runWithCapture denies disallowed working directory", async () => {
   assert.match(denied.error, /workdir_not_allowed/);
 });
 
+test("runWithCapture has no shell expansion path", async () => {
+  const out = await runWithCapture(
+    "node",
+    ["-e", "console.log(process.argv[1])", "$(echo injected)"],
+    {
+      timeoutMs: 2000,
+    }
+  );
+  assert.equal(out.ok, true);
+  assert.match(out.stdout, /\$\(echo injected\)/);
+  assert.doesNotMatch(out.stdout, /^injected\s*$/m);
+});
+
+test("runShell path requires binary/args and does not accept command strings", async () => {
+  const result = await executeOnNode(
+    { nodeId: "node-shell" },
+    {
+      jobId: "job-shell-invalid",
+      taskType: "shell",
+      payload: {
+        command: "echo unsafe",
+      },
+    }
+  );
+
+  assert.equal(result.status, "failed");
+  assert.equal((result.execution as any).code, "invalid_payload");
+});
+
+test("argv execution treats metacharacters as literal arguments", async () => {
+  const result = await runWithCapture("echo", ["hello;uname", "$(whoami)"]);
+  assert.equal(result.ok, true);
+  assert.match(result.stdout, /hello;uname/);
+  assert.match(result.stdout, /\$\(whoami\)/);
+});
+
 test("orchestrator-run enforces mandatory security gate", async () => {
   const result = await executeOnNode(
     { nodeId: "node-x" },
@@ -47,15 +83,16 @@ test("orchestrator-run enforces mandatory security gate", async () => {
       taskType: "orchestrator-run",
       payload: {
         cwd: "/tmp",
-        command: "echo should-not-run",
+        binary: "echo",
+        args: ["should-not-run"],
         securityTimeoutMs: 5000,
       },
     }
   );
 
   assert.equal(result.status, "failed");
-  assert.equal(result.execution.code, "security_gate_failed");
-  assert.equal(Boolean(result.execution.securityGate), true);
+  assert.equal((result.execution as any).code, "security_gate_failed");
+  assert.equal(Boolean((result.execution as any).securityGate), true);
 });
 
 test("reviewer emits explicit code+security go/no-go", async () => {

@@ -26,6 +26,8 @@ export type NodeFreshnessState = "healthy" | "degraded" | "offline";
 export interface NodeView extends RegisterNodeRequest {
   lastHeartbeat?: HeartbeatRequest;
   freshnessState: NodeFreshnessState;
+  trusted?: boolean;
+  revoked?: boolean;
 }
 
 export interface Task {

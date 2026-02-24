@@ -4,6 +4,7 @@ import type { HeartbeatRequest, RegisterNodeRequest, Task, TaskResult } from "./
 import { InMemoryControlPlaneStore, type ControlPlaneStore } from "./persistence.js";
 import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
 import { createTelemetryPlugin } from "./plugins/telemetry-plugin.js";
+import { JobTokenManager, NodeTrustManager } from "./security.js";
 
 const SCHEMA_VERSION = "1.0" as const;
 
@@ -13,11 +14,14 @@ export function buildControlPlane(
 ): FastifyInstance {
   const app = Fastify({ logger: true });
 
+  const tokenManager = new JobTokenManager();
+  const trustManager = new NodeTrustManager();
+
   const events: EdgeMeshEvent[] = [];
   const ctx = {
     emit(event: EdgeMeshEvent) {
       events.push(event);
-      if (events.length > 1000) events.shift();
+      if (events.length > 2000) events.shift();
     },
   };
 
@@ -28,10 +32,25 @@ export function buildControlPlane(
 
   app.get("/health", async () => ({ ok: true }));
 
-  app.post<{ Body: RegisterNodeRequest }>("/v1/nodes/register", async (req) => {
+  app.post<{ Body: RegisterNodeRequest }>("/v1/nodes/register", async (req, reply) => {
+    const bootstrapToken = req.headers["x-bootstrap-token"];
+    const ok = trustManager.trustNode(
+      req.body.nodeId,
+      typeof bootstrapToken === "string" ? bootstrapToken : undefined
+    );
+    if (!ok) return reply.code(401).send({ ok: false, error: "node_bootstrap_denied" });
+
     store.upsertNode(req.body);
+    store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
     ctx.emit({ type: "node.registered", at: Date.now(), nodeId: req.body.nodeId });
-    return { ok: true, nodeId: req.body.nodeId };
+    return { ok: true, nodeId: req.body.nodeId, trusted: true };
+  });
+
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/revoke", async (req) => {
+    trustManager.revokeNode(req.params.nodeId);
+    store.setNodeTrust(req.params.nodeId, { trusted: false, revoked: true });
+    ctx.emit({ type: "node.revoked", at: Date.now(), nodeId: req.params.nodeId });
+    return { ok: true };
   });
 
   app.get("/v1/nodes", async () => ({ nodes: store.listNodes() }));
@@ -39,6 +58,9 @@ export function buildControlPlane(
   app.post<{ Params: { nodeId: string }; Body: HeartbeatRequest }>(
     "/v1/nodes/:nodeId/heartbeat",
     async (req, reply) => {
+      if (trustManager.isRevoked(req.params.nodeId)) {
+        return reply.code(403).send({ ok: false, error: "node_revoked" });
+      }
       const ok = store.setHeartbeat(req.params.nodeId, req.body);
       if (!ok) return reply.code(404).send({ ok: false, error: "unknown_node" });
       ctx.emit({ type: "node.heartbeat", at: Date.now(), nodeId: req.params.nodeId });
@@ -46,9 +68,34 @@ export function buildControlPlane(
     }
   );
 
+  app.post<{
+    Body: { jobId: string; targetNodeId?: string; requiredTags?: string[]; ttlMs?: number };
+  }>("/v1/auth/job-token", async (req) => {
+    const exp = Date.now() + Math.max(1000, Math.min(req.body.ttlMs ?? 60_000, 5 * 60_000));
+    const token = tokenManager.issue({
+      jobId: req.body.jobId,
+      targetNodeId: req.body.targetNodeId,
+      requiredTags: req.body.requiredTags,
+      exp,
+    });
+    return { ok: true, token, exp };
+  });
+
   app.post<{ Body: Omit<Task, "status" | "createdAt" | "schemaVersion"> }>(
     "/v1/tasks",
-    async (req) => {
+    async (req, reply) => {
+      const auth = req.headers.authorization;
+      const rawToken =
+        typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      if (!rawToken) return reply.code(401).send({ ok: false, error: "missing_job_token" });
+
+      const verify = tokenManager.verify(rawToken, {
+        jobId: req.body.taskId,
+        targetNodeId: req.body.targetNodeId,
+        requiredTags: req.body.requiredTags,
+      });
+      if (!verify.ok) return reply.code(401).send({ ok: false, error: verify.error });
+
       const newTask: Task = {
         ...req.body,
         schemaVersion: SCHEMA_VERSION,
@@ -111,6 +158,21 @@ export function buildControlPlane(
 
   app.get("/v1/tasks/queue", async () => ({ ok: true, tasks: store.listQueuedTasks() }));
   app.get("/v1/tasks/running", async () => ({ ok: true, tasks: store.listRunningTasks() }));
+
+  app.get("/v1/observability/queue-depth", async () => ({
+    ok: true,
+    queueDepth: store.listTasks("queued").length,
+  }));
+
+  app.get("/v1/observability/node-health-timeline", async () => {
+    const timeline = events
+      .filter(
+        (e) =>
+          e.type === "node.heartbeat" || e.type === "node.registered" || e.type === "node.revoked"
+      )
+      .map((e) => ({ at: e.at, type: e.type, nodeId: e.nodeId ?? null }));
+    return { ok: true, timeline };
+  });
 
   app.get("/v1/runs/summary", async () => {
     const queued = store.listTasks("queued").length;

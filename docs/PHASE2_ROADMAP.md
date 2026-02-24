@@ -37,15 +37,18 @@ Turn the current scaffold into a reliable multi-node execution alpha for real Op
 - [x] Enforce mandatory security test gate in orchestrator-run flow
 - [x] Add final reviewer stage with explicit code+security GO/NO_GO output
 
-### Day 10: Control-plane observability
+### Day 10: Control-plane observability ✅
 
-- Add /v1/tasks (list/filter), /v1/runs summary endpoints
-- Add basic metrics: queue depth, claim latency, success ratio
+- [x] Add /v1/tasks (list/filter), /v1/runs summary endpoints
+- [x] Add basic metrics: queue depth, claim latency, success ratio
+- [x] Add node health timeline endpoint
 
-### Day 11-12: Integration pass
+### Day 11-12: Integration pass ✅
 
-- Wire one real OpenClaw orchestration flow through EdgeMesh
-- Validate end-to-end dispatch: enqueue -> claim -> run -> result
+- [x] Wire one real OpenClaw orchestration flow through EdgeMesh
+- [x] Validate end-to-end dispatch: enqueue -> claim -> run -> result
+- [x] Add failure drills/tests (crash, timeout, invalid payload, replay attempts)
+- [x] Enforce release gate checks (`npm test && npm run build`)
 
 ### Day 13-14: Stabilization + release candidate
 

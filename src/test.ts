@@ -3,6 +3,48 @@ import assert from "node:assert/strict";
 import { buildControlPlane } from "./control-plane.js";
 import { InMemoryControlPlaneStore } from "./persistence.js";
 
+async function issueJobToken(
+  app: ReturnType<typeof buildControlPlane>,
+  input: { taskId: string; requiredTags?: string[]; targetNodeId?: string }
+) {
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/auth/job-token",
+    payload: {
+      jobId: input.taskId,
+      requiredTags: input.requiredTags,
+      targetNodeId: input.targetNodeId,
+      ttlMs: 60_000,
+    },
+  });
+  assert.equal(res.statusCode, 200);
+  return res.json().token as string;
+}
+
+async function enqueueTask(
+  app: ReturnType<typeof buildControlPlane>,
+  task: {
+    taskId: string;
+    kind: string;
+    payload: Record<string, unknown>;
+    requiredTags?: string[];
+    targetNodeId?: string;
+  }
+) {
+  const token = await issueJobToken(app, {
+    taskId: task.taskId,
+    requiredTags: task.requiredTags,
+    targetNodeId: task.targetNodeId,
+  });
+
+  return app.inject({
+    method: "POST",
+    url: "/v1/tasks",
+    headers: { authorization: `Bearer ${token}` },
+    payload: task,
+  });
+}
+
 test("node lifecycle + task lifecycle", async () => {
   const app = buildControlPlane();
   await app.ready();
@@ -10,6 +52,7 @@ test("node lifecycle + task lifecycle", async () => {
   const register = await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-a",
@@ -32,15 +75,11 @@ test("node lifecycle + task lifecycle", async () => {
   });
   assert.equal(hb.statusCode, 200);
 
-  const createTask = await app.inject({
-    method: "POST",
-    url: "/v1/tasks",
-    payload: {
-      taskId: "task-1",
-      kind: "ping",
-      payload: { hello: "world" },
-      requiredTags: ["linux"],
-    },
+  const createTask = await enqueueTask(app, {
+    taskId: "task-1",
+    kind: "ping",
+    payload: { hello: "world" },
+    requiredTags: ["linux"],
   });
   assert.equal(createTask.statusCode, 200);
 
@@ -84,6 +123,7 @@ test("task selector respects required tags", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-b",
@@ -91,15 +131,11 @@ test("task selector respects required tags", async () => {
     },
   });
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/tasks",
-    payload: {
-      taskId: "task-2",
-      kind: "echo",
-      payload: { x: 1 },
-      requiredTags: ["linux"],
-    },
+  await enqueueTask(app, {
+    taskId: "task-2",
+    kind: "echo",
+    payload: { x: 1 },
+    requiredTags: ["linux"],
   });
 
   const claim = await app.inject({ method: "POST", url: "/v1/nodes/node-b/tasks/claim" });
@@ -118,6 +154,7 @@ test("expired claims are re-queued", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-c",
@@ -138,15 +175,11 @@ test("expired claims are re-queued", async () => {
     },
   });
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/tasks",
-    payload: {
-      taskId: "task-3",
-      kind: "echo",
-      payload: { hello: "ttl" },
-      requiredTags: ["linux"],
-    },
+  await enqueueTask(app, {
+    taskId: "task-3",
+    kind: "echo",
+    payload: { hello: "ttl" },
+    requiredTags: ["linux"],
   });
 
   const firstClaim = await app.inject({ method: "POST", url: "/v1/nodes/node-c/tasks/claim" });
@@ -185,6 +218,7 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-d",
@@ -192,15 +226,11 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
     },
   });
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/tasks",
-    payload: {
-      taskId: "task-4",
-      kind: "echo",
-      payload: { p: 1 },
-      requiredTags: ["linux"],
-    },
+  await enqueueTask(app, {
+    taskId: "task-4",
+    kind: "echo",
+    payload: { p: 1 },
+    requiredTags: ["linux"],
   });
 
   const claimWithoutHeartbeat = await app.inject({
@@ -237,15 +267,11 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
     },
   });
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/tasks",
-    payload: {
-      taskId: "task-5",
-      kind: "echo",
-      payload: { p: 2 },
-      requiredTags: ["linux"],
-    },
+  await enqueueTask(app, {
+    taskId: "task-5",
+    kind: "echo",
+    payload: { p: 2 },
+    requiredTags: ["linux"],
   });
 
   await new Promise((r) => setTimeout(r, 14));
@@ -269,6 +295,7 @@ test("maxConcurrentTasks and queue/running visibility endpoints", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-e",
@@ -290,10 +317,11 @@ test("maxConcurrentTasks and queue/running visibility endpoints", async () => {
   });
 
   for (const id of ["task-6", "task-7"]) {
-    await app.inject({
-      method: "POST",
-      url: "/v1/tasks",
-      payload: { taskId: id, kind: "echo", payload: { id }, requiredTags: ["linux"] },
+    await enqueueTask(app, {
+      taskId: id,
+      kind: "echo",
+      payload: { id },
+      requiredTags: ["linux"],
     });
   }
 
@@ -321,6 +349,7 @@ test("telemetry plugin endpoint exposes counters and events", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-t",
@@ -349,6 +378,7 @@ test("tasks list filter and runs summary endpoints", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-z",
@@ -370,10 +400,11 @@ test("tasks list filter and runs summary endpoints", async () => {
   });
 
   for (const id of ["sum-1", "sum-2"]) {
-    await app.inject({
-      method: "POST",
-      url: "/v1/tasks",
-      payload: { taskId: id, kind: "echo", payload: { id }, requiredTags: ["linux"] },
+    await enqueueTask(app, {
+      taskId: id,
+      kind: "echo",
+      payload: { id },
+      requiredTags: ["linux"],
     });
   }
 

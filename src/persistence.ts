@@ -7,13 +7,18 @@ import type {
   TaskResult,
 } from "./contracts.js";
 
-type NodeRecord = RegisterNodeRequest & { lastHeartbeat?: HeartbeatRequest };
+type NodeRecord = RegisterNodeRequest & {
+  lastHeartbeat?: HeartbeatRequest;
+  trusted?: boolean;
+  revoked?: boolean;
+};
 
 export interface ControlPlaneStore {
   upsertNode(node: RegisterNodeRequest): void;
   getNode(nodeId: string): NodeView | undefined;
   listNodes(): NodeView[];
   setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): boolean;
+  setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): boolean;
 
   enqueueTask(task: Task): void;
   claimTask(nodeId: string): Task | null;
@@ -67,6 +72,15 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
+  setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): boolean {
+    const node = this.nodes.get(nodeId);
+    if (!node) return false;
+    node.trusted = trust.trusted ?? node.trusted;
+    node.revoked = trust.revoked ?? node.revoked;
+    this.nodes.set(nodeId, node);
+    return true;
+  }
+
   enqueueTask(task: Task): void {
     this.tasks.set(task.taskId, task);
     this.taskQueue.push(task.taskId);
@@ -77,6 +91,7 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
 
     const node = this.nodes.get(nodeId);
     if (!node) return null;
+    if (node.revoked || !node.trusted) return null;
     if (this.getFreshnessState(node) !== "healthy") return null;
 
     const activeOnNode = this.countActiveTasksForNode(nodeId);
@@ -162,6 +177,8 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return {
       ...node,
       freshnessState: this.getFreshnessState(node),
+      trusted: node.trusted ?? false,
+      revoked: node.revoked ?? false,
     };
   }
 

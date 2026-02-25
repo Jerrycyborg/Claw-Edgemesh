@@ -42,6 +42,7 @@ test("signed job token issuance + replay rejection", async () => {
   const tokenResp = await app.inject({
     method: "POST",
     url: "/v1/auth/job-token",
+    headers: { "x-admin-token": "admin-dev" },
     payload: { jobId: "task-auth-1", requiredTags: ["linux"], ttlMs: 60_000 },
   });
   assert.equal(tokenResp.statusCode, 200);
@@ -94,7 +95,11 @@ test("node trust bootstrap + revocation blocks heartbeat", async () => {
 
   await bootstrapNode(app, "node-revoke");
 
-  const revoke = await app.inject({ method: "POST", url: "/v1/nodes/node-revoke/revoke" });
+  const revoke = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-revoke/revoke",
+    headers: { "x-admin-token": "admin-dev" },
+  });
   assert.equal(revoke.statusCode, 200);
 
   const hbAfter = await app.inject({
@@ -131,6 +136,7 @@ test("observability endpoints expose queue depth/latency/success ratio", async (
   const tokenResp = await app.inject({
     method: "POST",
     url: "/v1/auth/job-token",
+    headers: { "x-admin-token": "admin-dev" },
     payload: { jobId: "task-obs-1", requiredTags: ["linux"] },
   });
   const token = tokenResp.json().token;
@@ -226,5 +232,5 @@ test("failure drills: invalid payload + timeout + crash", async () => {
     createdAt: Date.now(),
   } as Task);
   assert.equal(crash.ok, false);
-  assert.equal(crash.errorCode, "NON_ZERO_EXIT");
+  assert.equal(crash.errorCode, "NONZERO_EXIT");
 });

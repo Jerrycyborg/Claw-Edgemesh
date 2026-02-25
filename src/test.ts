@@ -10,6 +10,7 @@ async function issueJobToken(
   const res = await app.inject({
     method: "POST",
     url: "/v1/auth/job-token",
+    headers: { "x-admin-token": "admin-dev" },
     payload: {
       jobId: input.taskId,
       requiredTags: input.requiredTags,

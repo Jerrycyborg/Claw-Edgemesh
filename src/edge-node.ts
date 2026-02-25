@@ -4,6 +4,7 @@ import { executeRealTask } from "./node-agent/executor.js";
 const SCHEMA_VERSION = "1.0" as const;
 const baseUrl = process.env.EDGEMESH_URL ?? "http://localhost:8787";
 const nodeId = process.env.EDGEMESH_NODE_ID ?? `node-${Math.random().toString(36).slice(2, 8)}`;
+const bootstrapToken = process.env.EDGEMESH_BOOTSTRAP_TOKEN ?? "bootstrap-dev";
 const heartbeatMs = Number(process.env.EDGEMESH_HEARTBEAT_MS ?? 3000);
 const pollMs = Number(process.env.EDGEMESH_POLL_MS ?? 1500);
 
@@ -37,6 +38,7 @@ async function registerNode() {
 
   await httpJson(`${baseUrl}/v1/nodes/register`, {
     method: "POST",
+    headers: { "x-bootstrap-token": bootstrapToken },
     body: JSON.stringify(body),
   });
 
@@ -60,10 +62,13 @@ async function sendHeartbeat() {
 }
 
 async function claimTask(): Promise<Task | null> {
-  const claimed = await httpJson<{ ok: boolean; task: Task | null }>(`${baseUrl}/v1/nodes/${nodeId}/tasks/claim`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
+  const claimed = await httpJson<{ ok: boolean; task: Task | null }>(
+    `${baseUrl}/v1/nodes/${nodeId}/tasks/claim`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    }
+  );
   return claimed.task;
 }
 
@@ -93,7 +98,9 @@ async function executeTask(task: Task): Promise<TaskResult> {
     nodeId,
     ok: execution.ok,
     output: execution.output,
-    error: execution.ok ? undefined : `${execution.errorCode ?? "EXECUTION_ERROR"}:${execution.error ?? "unknown"}`,
+    error: execution.ok
+      ? undefined
+      : `${execution.errorCode ?? "EXECUTION_ERROR"}:${execution.error ?? "unknown"}`,
     finishedAt: Date.now(),
   };
 }

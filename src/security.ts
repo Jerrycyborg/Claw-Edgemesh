@@ -42,7 +42,11 @@ export class JobTokenManager {
       .createHmac("sha256", this.secret)
       .update(encoded)
       .digest("base64url");
-    if (sig !== expectedSig) return { ok: false as const, error: "token_signature_invalid" };
+    const sigBuf = Buffer.from(sig);
+    const expectedBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+      return { ok: false as const, error: "token_signature_invalid" };
+    }
 
     let payload: JobTokenPayload;
     try {
@@ -83,30 +87,12 @@ export class JobTokenManager {
 
 export class NodeTrustManager {
   private bootstrapSecret: string;
-  private trusted = new Set<string>();
-  private revoked = new Set<string>();
 
   constructor(secret?: string) {
     this.bootstrapSecret = secret ?? process.env.EDGEMESH_BOOTSTRAP_SECRET ?? "bootstrap-dev";
   }
 
-  trustNode(nodeId: string, bootstrapToken?: string) {
-    if (bootstrapToken !== this.bootstrapSecret) return false;
-    if (this.revoked.has(nodeId)) return false;
-    this.trusted.add(nodeId);
-    return true;
-  }
-
-  revokeNode(nodeId: string) {
-    this.revoked.add(nodeId);
-    this.trusted.delete(nodeId);
-  }
-
-  isTrusted(nodeId: string) {
-    return this.trusted.has(nodeId) && !this.revoked.has(nodeId);
-  }
-
-  isRevoked(nodeId: string) {
-    return this.revoked.has(nodeId);
+  verifyBootstrapToken(token?: string): boolean {
+    return typeof token === "string" && token === this.bootstrapSecret;
   }
 }

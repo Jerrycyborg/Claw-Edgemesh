@@ -1,9 +1,5 @@
-import { spawn } from "node:child_process";
 import type { Task } from "../contracts.js";
-
-const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_TIMEOUT_MS = 120_000;
-const MAX_CAPTURE_BYTES = 64 * 1024;
+import { runWithCapture } from "./agent.js";
 
 export type RealTaskKind = "shell" | "orchestrator-run" | "hook-dispatch";
 
@@ -39,18 +35,6 @@ export interface ExecutorResult {
   output?: Record<string, unknown>;
 }
 
-function boundedTimeout(input?: number): number {
-  const candidate = Number(input ?? DEFAULT_TIMEOUT_MS);
-  if (!Number.isFinite(candidate) || candidate <= 0) return DEFAULT_TIMEOUT_MS;
-  return Math.min(candidate, MAX_TIMEOUT_MS);
-}
-
-function truncateCapture(value: string): string {
-  if (Buffer.byteLength(value) <= MAX_CAPTURE_BYTES) return value;
-  const buf = Buffer.from(value);
-  return `${buf.subarray(0, MAX_CAPTURE_BYTES).toString("utf8")}\n...[truncated]`;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -64,70 +48,30 @@ async function executeShell(payload: ShellPayload): Promise<ExecutorResult> {
     return { ok: false, errorCode: "INVALID_PAYLOAD", error: "shell.command_required" };
   }
 
-  const timeoutMs = boundedTimeout(payload.timeoutMs);
-
-  return await new Promise<ExecutorResult>((resolve) => {
-    const child = spawn(payload.command, payload.args ?? [], {
-      cwd: payload.cwd,
-      env: { ...process.env, ...(payload.env ?? {}) },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 1_000).unref();
-    }, timeoutMs);
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      resolve({
-        ok: false,
-        errorCode: "SPAWN_ERROR",
-        error: err.message,
-        output: {
-          timeoutMs,
-          stdout: truncateCapture(stdout),
-          stderr: truncateCapture(stderr),
-        },
-      });
-    });
-
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      const output = {
-        timeoutMs,
-        stdout: truncateCapture(stdout),
-        stderr: truncateCapture(stderr),
-        exitCode: code,
-        signal,
-      };
-
-      if (timedOut) {
-        resolve({ ok: false, errorCode: "TIMEOUT", error: `timeout_exceeded:${timeoutMs}`, output });
-        return;
-      }
-
-      if (code === 0) {
-        resolve({ ok: true, output });
-        return;
-      }
-
-      resolve({ ok: false, errorCode: "NON_ZERO_EXIT", error: `process_exit:${code ?? "null"}`, output });
-    });
+  const result = await runWithCapture(payload.command, payload.args ?? [], {
+    cwd: payload.cwd,
+    env: payload.env,
+    timeoutMs: payload.timeoutMs,
   });
+
+  const output = {
+    stdout: result.stdout,
+    stderr: result.stderr,
+    exitCode: result.exitCode ?? null,
+    signal: result.signal ?? null,
+    timeoutMs: result.timeoutMs,
+  };
+
+  if (result.ok) {
+    return { ok: true, output };
+  }
+
+  return {
+    ok: false,
+    errorCode: result.code.toUpperCase(),
+    error: result.error,
+    output,
+  };
 }
 
 function executeOrchestratorRun(payload: OrchestratorPayload): ExecutorResult {
@@ -177,7 +121,11 @@ function executeHookDispatch(payload: HookDispatchPayload): ExecutorResult {
 
 export async function executeRealTask(task: Task): Promise<ExecutorResult> {
   if (!isRealTaskKind(task.kind)) {
-    return { ok: false, errorCode: "UNSUPPORTED_KIND", error: `unsupported_task_kind:${task.kind}` };
+    return {
+      ok: false,
+      errorCode: "UNSUPPORTED_KIND",
+      error: `unsupported_task_kind:${task.kind}`,
+    };
   }
 
   const payload = isRecord(task.payload) ? task.payload : {};

@@ -1,10 +1,17 @@
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
-import type { HeartbeatRequest, RegisterNodeRequest, Task, TaskResult } from "./contracts.js";
+import type {
+  DlqEntry,
+  HeartbeatRequest,
+  RegisterNodeRequest,
+  Task,
+  TaskResult,
+} from "./contracts.js";
 import { InMemoryControlPlaneStore, type ControlPlaneStore } from "./persistence.js";
 import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
 import { createTelemetryPlugin } from "./plugins/telemetry-plugin.js";
 import { JobTokenManager, NodeTrustManager } from "./security.js";
+import { computeRetryDecision } from "./control/retry-policy.js";
 
 const SCHEMA_VERSION = "1.0" as const;
 
@@ -16,6 +23,7 @@ export function buildControlPlane(
 
   const tokenManager = new JobTokenManager();
   const trustManager = new NodeTrustManager();
+  const adminSecret = process.env.EDGEMESH_ADMIN_SECRET ?? "admin-dev";
 
   const events: EdgeMeshEvent[] = [];
   const ctx = {
@@ -32,22 +40,50 @@ export function buildControlPlane(
 
   app.get("/health", async () => ({ ok: true }));
 
-  app.post<{ Body: RegisterNodeRequest }>("/v1/nodes/register", async (req, reply) => {
-    const bootstrapToken = req.headers["x-bootstrap-token"];
-    const ok = trustManager.trustNode(
-      req.body.nodeId,
-      typeof bootstrapToken === "string" ? bootstrapToken : undefined
-    );
-    if (!ok) return reply.code(401).send({ ok: false, error: "node_bootstrap_denied" });
+  app.post<{ Body: RegisterNodeRequest }>(
+    "/v1/nodes/register",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["schemaVersion", "nodeId", "capabilities"],
+          properties: {
+            schemaVersion: { type: "string" },
+            nodeId: { type: "string", minLength: 1 },
+            region: { type: "string" },
+            capabilities: {
+              type: "object",
+              required: ["tags", "maxConcurrentTasks"],
+              properties: {
+                tags: { type: "array", items: { type: "string" } },
+                maxConcurrentTasks: { type: "integer", minimum: 1, maximum: 100 },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const bootstrapToken = req.headers["x-bootstrap-token"];
+      if (
+        !trustManager.verifyBootstrapToken(
+          typeof bootstrapToken === "string" ? bootstrapToken : undefined
+        )
+      ) {
+        return reply.code(401).send({ ok: false, error: "node_bootstrap_denied" });
+      }
 
-    store.upsertNode(req.body);
-    store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
-    ctx.emit({ type: "node.registered", at: Date.now(), nodeId: req.body.nodeId });
-    return { ok: true, nodeId: req.body.nodeId, trusted: true };
-  });
+      store.upsertNode(req.body);
+      store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
+      ctx.emit({ type: "node.registered", at: Date.now(), nodeId: req.body.nodeId });
+      return { ok: true, nodeId: req.body.nodeId, trusted: true };
+    }
+  );
 
-  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/revoke", async (req) => {
-    trustManager.revokeNode(req.params.nodeId);
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/revoke", async (req, reply) => {
+    const adminToken = req.headers["x-admin-token"];
+    if (adminToken !== adminSecret)
+      return reply.code(401).send({ ok: false, error: "unauthorized" });
     store.setNodeTrust(req.params.nodeId, { trusted: false, revoked: true });
     ctx.emit({ type: "node.revoked", at: Date.now(), nodeId: req.params.nodeId });
     return { ok: true };
@@ -57,10 +93,26 @@ export function buildControlPlane(
 
   app.post<{ Params: { nodeId: string }; Body: HeartbeatRequest }>(
     "/v1/nodes/:nodeId/heartbeat",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["schemaVersion", "nodeId", "ts", "status", "load", "runningTasks"],
+          properties: {
+            schemaVersion: { type: "string" },
+            nodeId: { type: "string", minLength: 1 },
+            ts: { type: "number" },
+            status: { type: "string", enum: ["healthy", "degraded"] },
+            load: { type: "number", minimum: 0, maximum: 1 },
+            runningTasks: { type: "integer", minimum: 0 },
+          },
+        },
+      },
+    },
     async (req, reply) => {
-      if (trustManager.isRevoked(req.params.nodeId)) {
-        return reply.code(403).send({ ok: false, error: "node_revoked" });
-      }
+      const node = store.getNode(req.params.nodeId);
+      if (!node) return reply.code(404).send({ ok: false, error: "unknown_node" });
+      if (node.revoked) return reply.code(403).send({ ok: false, error: "node_revoked" });
       const ok = store.setHeartbeat(req.params.nodeId, req.body);
       if (!ok) return reply.code(404).send({ ok: false, error: "unknown_node" });
       ctx.emit({ type: "node.heartbeat", at: Date.now(), nodeId: req.params.nodeId });
@@ -70,19 +122,55 @@ export function buildControlPlane(
 
   app.post<{
     Body: { jobId: string; targetNodeId?: string; requiredTags?: string[]; ttlMs?: number };
-  }>("/v1/auth/job-token", async (req) => {
-    const exp = Date.now() + Math.max(1000, Math.min(req.body.ttlMs ?? 60_000, 5 * 60_000));
-    const token = tokenManager.issue({
-      jobId: req.body.jobId,
-      targetNodeId: req.body.targetNodeId,
-      requiredTags: req.body.requiredTags,
-      exp,
-    });
-    return { ok: true, token, exp };
-  });
+  }>(
+    "/v1/auth/job-token",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["jobId"],
+          properties: {
+            jobId: { type: "string", minLength: 1 },
+            targetNodeId: { type: "string" },
+            requiredTags: { type: "array", items: { type: "string" } },
+            ttlMs: { type: "number" },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const adminToken = req.headers["x-admin-token"];
+      if (adminToken !== adminSecret)
+        return reply.code(401).send({ ok: false, error: "unauthorized" });
+      const exp = Date.now() + Math.max(1000, Math.min(req.body.ttlMs ?? 60_000, 5 * 60_000));
+      const token = tokenManager.issue({
+        jobId: req.body.jobId,
+        targetNodeId: req.body.targetNodeId,
+        requiredTags: req.body.requiredTags,
+        exp,
+      });
+      return { ok: true, token, exp };
+    }
+  );
 
   app.post<{ Body: Omit<Task, "status" | "createdAt" | "schemaVersion"> }>(
     "/v1/tasks",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["taskId", "kind", "payload"],
+          properties: {
+            taskId: { type: "string", minLength: 1 },
+            kind: { type: "string", minLength: 1 },
+            payload: { type: "object" },
+            targetNodeId: { type: "string" },
+            requiredTags: { type: "array", items: { type: "string" } },
+            maxAttempts: { type: "integer", minimum: 1, maximum: 10 },
+          },
+        },
+      },
+    },
     async (req, reply) => {
       const auth = req.headers.authorization;
       const rawToken =
@@ -135,26 +223,94 @@ export function buildControlPlane(
 
   app.post<{ Params: { taskId: string }; Body: TaskResult }>(
     "/v1/tasks/:taskId/result",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["schemaVersion", "taskId", "nodeId", "ok", "finishedAt"],
+          properties: {
+            schemaVersion: { type: "string" },
+            taskId: { type: "string" },
+            nodeId: { type: "string" },
+            ok: { type: "boolean" },
+            output: { type: "object" },
+            error: { type: "string" },
+            finishedAt: { type: "number" },
+          },
+        },
+      },
+    },
     async (req, reply) => {
       const task = store.getTask(req.params.taskId);
       if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
 
-      store.setTaskStatus(task.taskId, req.body.ok ? "done" : "failed");
+      if (req.body.ok) {
+        store.setTaskStatus(task.taskId, "done");
+        store.setTaskResult(req.body);
+        ctx.emit({
+          type: "task.done",
+          at: Date.now(),
+          taskId: task.taskId,
+          nodeId: req.body.nodeId,
+        });
+        return { ok: true };
+      }
+
+      const retry = computeRetryDecision({
+        attempt: task.attempt ?? 1,
+        maxAttempts: task.maxAttempts ?? 3,
+      });
+
+      if (retry.retry) {
+        store.requeueForRetry(task.taskId, Date.now() + retry.delayMs);
+        ctx.emit({
+          type: "task.failed",
+          at: Date.now(),
+          taskId: task.taskId,
+          nodeId: req.body.nodeId,
+          detail: { retrying: true, attempt: task.attempt, delayMs: retry.delayMs },
+        });
+        return { ok: true, retrying: true, delayMs: retry.delayMs };
+      }
+
+      store.setTaskStatus(task.taskId, "failed");
       store.setTaskResult(req.body);
+      const dlqEntry: DlqEntry = {
+        schemaVersion: SCHEMA_VERSION,
+        taskId: task.taskId,
+        task,
+        lastResult: req.body,
+        reason: "max_attempts_exhausted",
+        enqueuedAt: Date.now(),
+      };
+      store.enqueueDlq(dlqEntry);
       ctx.emit({
-        type: req.body.ok ? "task.done" : "task.failed",
+        type: "task.failed",
         at: Date.now(),
         taskId: task.taskId,
         nodeId: req.body.nodeId,
+        detail: { retrying: false, toDlq: retry.toDlq },
       });
-      return { ok: true };
+      return { ok: true, retrying: false, toDlq: true };
     }
   );
 
-  app.get("/v1/tasks", async (req: any) => {
-    const status = req.query?.status as Task["status"] | undefined;
-    return { ok: true, tasks: store.listTasks(status) };
-  });
+  app.get<{ Querystring: { status?: Task["status"] } }>(
+    "/v1/tasks",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["queued", "claimed", "running", "done", "failed"] },
+          },
+        },
+      },
+    },
+    async (req) => {
+      return { ok: true, tasks: store.listTasks(req.query.status) };
+    }
+  );
 
   app.get("/v1/tasks/queue", async () => ({ ok: true, tasks: store.listQueuedTasks() }));
   app.get("/v1/tasks/running", async () => ({ ok: true, tasks: store.listRunningTasks() }));
@@ -216,6 +372,24 @@ export function buildControlPlane(
     const task = store.getTask(req.params.taskId);
     if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
     return { ok: true, task, result: store.getTaskResult(task.taskId) ?? null };
+  });
+
+  app.get("/v1/dlq", async () => ({ ok: true, entries: store.listDlq() }));
+
+  app.get<{ Params: { taskId: string } }>("/v1/dlq/:taskId", async (req, reply) => {
+    const entry = store.getDlqEntry(req.params.taskId);
+    if (!entry) return reply.code(404).send({ ok: false, error: "dlq_entry_not_found" });
+    return { ok: true, entry };
+  });
+
+  app.post<{ Params: { taskId: string } }>("/v1/dlq/:taskId/replay", async (req, reply) => {
+    const adminToken = req.headers["x-admin-token"];
+    if (adminToken !== adminSecret)
+      return reply.code(401).send({ ok: false, error: "unauthorized" });
+    const ok = store.requeueFromDlq(req.params.taskId);
+    if (!ok) return reply.code(404).send({ ok: false, error: "dlq_entry_not_found" });
+    ctx.emit({ type: "task.enqueued", at: Date.now(), taskId: req.params.taskId });
+    return { ok: true, taskId: req.params.taskId };
   });
 
   return app;

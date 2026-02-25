@@ -1,5 +1,6 @@
 import type { ControlPlaneStore } from "../persistence.js";
 import type {
+  DlqEntry,
   HeartbeatRequest,
   NodeView,
   RegisterNodeRequest,
@@ -63,11 +64,31 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
     void status;
     this.notImplemented();
   }
+  requeueForRetry(taskId: string, retryAfter: number): boolean {
+    void taskId;
+    void retryAfter;
+    this.notImplemented();
+  }
   setTaskResult(result: TaskResult): void {
     void result;
     this.notImplemented();
   }
   getTaskResult(taskId: string): TaskResult | undefined {
+    void taskId;
+    this.notImplemented();
+  }
+  enqueueDlq(entry: DlqEntry): void {
+    void entry;
+    this.notImplemented();
+  }
+  listDlq(): DlqEntry[] {
+    this.notImplemented();
+  }
+  getDlqEntry(taskId: string): DlqEntry | undefined {
+    void taskId;
+    this.notImplemented();
+  }
+  requeueFromDlq(taskId: string): boolean {
     void taskId;
     this.notImplemented();
   }

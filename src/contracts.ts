@@ -37,9 +37,11 @@ export interface Task {
   payload: Record<string, unknown>;
   targetNodeId?: string;
   requiredTags?: string[];
+  maxAttempts?: number;
   status: "queued" | "claimed" | "running" | "done" | "failed";
   createdAt: number;
   claimedAt?: number;
+  retryAfter?: number;
   attempt?: number;
   assignedNodeId?: string;
 }
@@ -52,4 +54,13 @@ export interface TaskResult {
   output?: Record<string, unknown>;
   error?: string;
   finishedAt: number;
+}
+
+export interface DlqEntry {
+  schemaVersion: SchemaVersion;
+  taskId: string;
+  task: Task;
+  lastResult: TaskResult;
+  reason: string;
+  enqueuedAt: number;
 }

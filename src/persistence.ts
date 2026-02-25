@@ -1,4 +1,5 @@
 import type {
+  DlqEntry,
   HeartbeatRequest,
   NodeFreshnessState,
   NodeView,
@@ -28,8 +29,15 @@ export interface ControlPlaneStore {
   listRunningTasks(): Task[];
   listTasks(status?: Task["status"]): Task[];
 
+  requeueForRetry(taskId: string, retryAfter: number): boolean;
+
   setTaskResult(result: TaskResult): void;
   getTaskResult(taskId: string): TaskResult | undefined;
+
+  enqueueDlq(entry: DlqEntry): void;
+  listDlq(): DlqEntry[];
+  getDlqEntry(taskId: string): DlqEntry | undefined;
+  requeueFromDlq(taskId: string): boolean;
 }
 
 export class InMemoryControlPlaneStore implements ControlPlaneStore {
@@ -37,6 +45,7 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
   private tasks = new Map<string, Task>();
   private taskQueue: string[] = [];
   private results = new Map<string, TaskResult>();
+  private dlq = new Map<string, DlqEntry>();
   private readonly claimTtlMs: number;
   private readonly heartbeatHealthyMs: number;
   private readonly heartbeatDegradedMs: number;
@@ -97,9 +106,11 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     const activeOnNode = this.countActiveTasksForNode(nodeId);
     if (activeOnNode >= node.capabilities.maxConcurrentTasks) return null;
 
+    const now = Date.now();
     const candidateId = this.taskQueue.find((taskId) => {
       const t = this.tasks.get(taskId);
       if (!t || t.status !== "queued") return false;
+      if (t.retryAfter && t.retryAfter > now) return false;
       if (t.targetNodeId && t.targetNodeId !== nodeId) return false;
       if (t.requiredTags?.length) {
         const tags = new Set(node.capabilities.tags);
@@ -154,12 +165,59 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return [...this.tasks.values()].filter((task) => task.status === status);
   }
 
+  requeueForRetry(taskId: string, retryAfter: number): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+
+    task.status = "queued";
+    task.claimedAt = undefined;
+    task.assignedNodeId = undefined;
+    task.retryAfter = retryAfter;
+    this.tasks.set(taskId, task);
+
+    if (!this.taskQueue.includes(taskId)) {
+      this.taskQueue.push(taskId);
+    }
+    return true;
+  }
+
   setTaskResult(result: TaskResult): void {
     this.results.set(result.taskId, result);
   }
 
   getTaskResult(taskId: string): TaskResult | undefined {
     return this.results.get(taskId);
+  }
+
+  enqueueDlq(entry: DlqEntry): void {
+    this.dlq.set(entry.taskId, entry);
+  }
+
+  listDlq(): DlqEntry[] {
+    return [...this.dlq.values()];
+  }
+
+  getDlqEntry(taskId: string): DlqEntry | undefined {
+    return this.dlq.get(taskId);
+  }
+
+  requeueFromDlq(taskId: string): boolean {
+    const entry = this.dlq.get(taskId);
+    if (!entry) return false;
+
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+
+    task.status = "queued";
+    task.attempt = 0;
+    task.retryAfter = undefined;
+    task.claimedAt = undefined;
+    task.assignedNodeId = undefined;
+    this.tasks.set(taskId, task);
+
+    if (!this.taskQueue.includes(taskId)) this.taskQueue.push(taskId);
+    this.dlq.delete(taskId);
+    return true;
   }
 
   private getFreshnessState(node: NodeRecord): NodeFreshnessState {

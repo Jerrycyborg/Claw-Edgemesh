@@ -3,6 +3,25 @@ import assert from "node:assert/strict";
 import { buildControlPlane } from "./control-plane.js";
 import { InMemoryControlPlaneStore } from "./persistence.js";
 
+// Registers a node and returns its node JWT.
+async function registerNode(
+  app: ReturnType<typeof buildControlPlane>,
+  nodeId: string,
+  capabilities: { tags: string[]; maxConcurrentTasks: number } = {
+    tags: ["linux"],
+    maxConcurrentTasks: 1,
+  }
+): Promise<string> {
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/register",
+    headers: { "x-bootstrap-token": "bootstrap-dev" },
+    payload: { schemaVersion: "1.0", nodeId, capabilities },
+  });
+  assert.equal(res.statusCode, 200);
+  return res.json().token as string;
+}
+
 async function issueJobToken(
   app: ReturnType<typeof buildControlPlane>,
   input: { taskId: string; requiredTags?: string[]; targetNodeId?: string }
@@ -50,21 +69,15 @@ test("node lifecycle + task lifecycle", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  const register = await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-a",
-      capabilities: { tags: ["linux", "default"], maxConcurrentTasks: 1 },
-    },
+  const nodeToken = await registerNode(app, "node-a", {
+    tags: ["linux", "default"],
+    maxConcurrentTasks: 1,
   });
-  assert.equal(register.statusCode, 200);
 
   const hb = await app.inject({
     method: "POST",
     url: "/v1/nodes/node-a/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-a",
@@ -84,19 +97,28 @@ test("node lifecycle + task lifecycle", async () => {
   });
   assert.equal(createTask.statusCode, 200);
 
-  const claim = await app.inject({ method: "POST", url: "/v1/nodes/node-a/tasks/claim" });
+  const claim = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-a/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(claim.statusCode, 200);
   const claimBody = claim.json();
   assert.equal(claimBody.ok, true);
   assert.equal(claimBody.task.taskId, "task-1");
   assert.equal(claimBody.task.status, "claimed");
 
-  const ack = await app.inject({ method: "POST", url: "/v1/tasks/task-1/ack" });
+  const ack = await app.inject({
+    method: "POST",
+    url: "/v1/tasks/task-1/ack",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(ack.statusCode, 200);
 
   const result = await app.inject({
     method: "POST",
     url: "/v1/tasks/task-1/result",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       taskId: "task-1",
@@ -110,9 +132,8 @@ test("node lifecycle + task lifecycle", async () => {
 
   const getTask = await app.inject({ method: "GET", url: "/v1/tasks/task-1" });
   assert.equal(getTask.statusCode, 200);
-  const taskBody = getTask.json();
-  assert.equal(taskBody.task.status, "done");
-  assert.equal(taskBody.result.ok, true);
+  assert.equal(getTask.json().task.status, "done");
+  assert.equal(getTask.json().result.ok, true);
 
   await app.close();
 });
@@ -121,16 +142,7 @@ test("task selector respects required tags", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-b",
-      capabilities: { tags: ["gpu"], maxConcurrentTasks: 1 },
-    },
-  });
+  const nodeToken = await registerNode(app, "node-b", { tags: ["gpu"], maxConcurrentTasks: 1 });
 
   await enqueueTask(app, {
     taskId: "task-2",
@@ -139,10 +151,12 @@ test("task selector respects required tags", async () => {
     requiredTags: ["linux"],
   });
 
-  const claim = await app.inject({ method: "POST", url: "/v1/nodes/node-b/tasks/claim" });
-  const body = claim.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.task, null);
+  const claim = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-b/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
+  assert.equal(claim.json().task, null);
 
   await app.close();
 });
@@ -152,20 +166,12 @@ test("expired claims are re-queued", async () => {
   const app = buildControlPlane(store);
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-c",
-      capabilities: { tags: ["linux"], maxConcurrentTasks: 1 },
-    },
-  });
+  const nodeToken = await registerNode(app, "node-c");
 
   await app.inject({
     method: "POST",
     url: "/v1/nodes/node-c/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-c",
@@ -183,7 +189,11 @@ test("expired claims are re-queued", async () => {
     requiredTags: ["linux"],
   });
 
-  const firstClaim = await app.inject({ method: "POST", url: "/v1/nodes/node-c/tasks/claim" });
+  const firstClaim = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-c/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(firstClaim.statusCode, 200);
   assert.equal(firstClaim.json().task.taskId, "task-3");
 
@@ -192,6 +202,7 @@ test("expired claims are re-queued", async () => {
   await app.inject({
     method: "POST",
     url: "/v1/nodes/node-c/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-c",
@@ -202,11 +213,14 @@ test("expired claims are re-queued", async () => {
     },
   });
 
-  const secondClaim = await app.inject({ method: "POST", url: "/v1/nodes/node-c/tasks/claim" });
+  const secondClaim = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-c/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(secondClaim.statusCode, 200);
-  const body = secondClaim.json();
-  assert.equal(body.task.taskId, "task-3");
-  assert.equal(body.task.attempt, 2);
+  assert.equal(secondClaim.json().task.taskId, "task-3");
+  assert.equal(secondClaim.json().task.attempt, 2);
 
   await app.close();
 });
@@ -216,16 +230,7 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
   const app = buildControlPlane(store);
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-d",
-      capabilities: { tags: ["linux"], maxConcurrentTasks: 1 },
-    },
-  });
+  const nodeToken = await registerNode(app, "node-d");
 
   await enqueueTask(app, {
     taskId: "task-4",
@@ -237,12 +242,14 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
   const claimWithoutHeartbeat = await app.inject({
     method: "POST",
     url: "/v1/nodes/node-d/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
   });
   assert.equal(claimWithoutHeartbeat.json().task, null);
 
   await app.inject({
     method: "POST",
     url: "/v1/nodes/node-d/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-d",
@@ -253,12 +260,17 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
     },
   });
 
-  const claimHealthy = await app.inject({ method: "POST", url: "/v1/nodes/node-d/tasks/claim" });
+  const claimHealthy = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-d/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(claimHealthy.json().task.taskId, "task-4");
 
   await app.inject({
     method: "POST",
     url: "/v1/tasks/task-4/result",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       taskId: "task-4",
@@ -279,7 +291,11 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
   const nodesDegraded = await app.inject({ method: "GET", url: "/v1/nodes" });
   assert.equal(nodesDegraded.json().nodes[0].freshnessState, "degraded");
 
-  const claimDegraded = await app.inject({ method: "POST", url: "/v1/nodes/node-d/tasks/claim" });
+  const claimDegraded = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-d/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(claimDegraded.json().task, null);
 
   await new Promise((r) => setTimeout(r, 14));
@@ -293,20 +309,12 @@ test("maxConcurrentTasks and queue/running visibility endpoints", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-e",
-      capabilities: { tags: ["linux"], maxConcurrentTasks: 1 },
-    },
-  });
+  const nodeToken = await registerNode(app, "node-e");
 
   await app.inject({
     method: "POST",
     url: "/v1/nodes/node-e/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-e",
@@ -318,18 +326,21 @@ test("maxConcurrentTasks and queue/running visibility endpoints", async () => {
   });
 
   for (const id of ["task-6", "task-7"]) {
-    await enqueueTask(app, {
-      taskId: id,
-      kind: "echo",
-      payload: { id },
-      requiredTags: ["linux"],
-    });
+    await enqueueTask(app, { taskId: id, kind: "echo", payload: { id }, requiredTags: ["linux"] });
   }
 
-  const claim1 = await app.inject({ method: "POST", url: "/v1/nodes/node-e/tasks/claim" });
+  const claim1 = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-e/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(claim1.json().task.taskId, "task-6");
 
-  const claim2 = await app.inject({ method: "POST", url: "/v1/nodes/node-e/tasks/claim" });
+  const claim2 = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-e/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   assert.equal(claim2.json().task, null);
 
   const queued = await app.inject({ method: "GET", url: "/v1/tasks/queue" });
@@ -347,20 +358,10 @@ test("telemetry plugin endpoint exposes counters and events", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-t",
-      capabilities: { tags: ["linux"], maxConcurrentTasks: 1 },
-    },
-  });
+  await registerNode(app, "node-t");
 
   const telem = await app.inject({ method: "GET", url: "/v1/plugins/telemetry" });
   assert.equal(telem.statusCode, 200);
-
   const body = telem.json();
   assert.equal(body.ok, true);
   assert.equal(body.plugin, "telemetry");
@@ -376,20 +377,12 @@ test("tasks list filter and runs summary endpoints", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await app.inject({
-    method: "POST",
-    url: "/v1/nodes/register",
-    headers: { "x-bootstrap-token": "bootstrap-dev" },
-    payload: {
-      schemaVersion: "1.0",
-      nodeId: "node-z",
-      capabilities: { tags: ["linux"], maxConcurrentTasks: 2 },
-    },
-  });
+  const nodeToken = await registerNode(app, "node-z", { tags: ["linux"], maxConcurrentTasks: 2 });
 
   await app.inject({
     method: "POST",
     url: "/v1/nodes/node-z/heartbeat",
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-z",
@@ -401,17 +394,20 @@ test("tasks list filter and runs summary endpoints", async () => {
   });
 
   for (const id of ["sum-1", "sum-2"]) {
-    await enqueueTask(app, {
-      taskId: id,
-      kind: "echo",
-      payload: { id },
-      requiredTags: ["linux"],
-    });
+    await enqueueTask(app, { taskId: id, kind: "echo", payload: { id }, requiredTags: ["linux"] });
   }
 
-  const claim = await app.inject({ method: "POST", url: "/v1/nodes/node-z/tasks/claim" });
+  const claim = await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-z/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
   const claimedTaskId = claim.json().task.taskId;
-  await app.inject({ method: "POST", url: `/v1/tasks/${claimedTaskId}/ack` });
+  await app.inject({
+    method: "POST",
+    url: `/v1/tasks/${claimedTaskId}/ack`,
+    headers: { authorization: `Bearer ${nodeToken}` },
+  });
 
   const queuedOnly = await app.inject({ method: "GET", url: "/v1/tasks?status=queued" });
   assert.equal(queuedOnly.statusCode, 200);

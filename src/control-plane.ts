@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
   DlqEntry,
   HeartbeatRequest,
@@ -10,14 +10,13 @@ import type {
 import { InMemoryControlPlaneStore, type ControlPlaneStore } from "./persistence.js";
 import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
 import { createTelemetryPlugin } from "./plugins/telemetry-plugin.js";
-import { JobTokenManager, NodeTrustManager } from "./security.js";
+import { JobTokenManager, NodeJwtManager, NodeTrustManager } from "./security.js";
 import { computeRetryDecision } from "./control/retry-policy.js";
 
 const SCHEMA_VERSION = "1.0" as const;
 
 function createStore(): ControlPlaneStore {
   if (process.env.EDGEMESH_STORE === "redis") {
-    // Dynamically import to keep ioredis optional at runtime when not needed.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { RedisControlPlaneStore } = require("./persistence/redis-adapter.js");
     const redisUrl = process.env.EDGEMESH_REDIS_URL ?? "redis://localhost:6379";
@@ -26,14 +25,25 @@ function createStore(): ControlPlaneStore {
   return new InMemoryControlPlaneStore();
 }
 
+function extractNodeJwt(
+  req: FastifyRequest,
+  mgr: NodeJwtManager
+): { ok: true; nodeId: string } | { ok: false; error: string } {
+  const auth = req.headers.authorization;
+  const raw = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!raw) return { ok: false, error: "missing_node_token" };
+  return mgr.verify(raw);
+}
+
 export function buildControlPlane(
   store: ControlPlaneStore = createStore(),
-  options: { plugins?: EdgeMeshPlugin[] } = {}
+  options: { plugins?: EdgeMeshPlugin[]; nodeJwtManager?: NodeJwtManager } = {}
 ): FastifyInstance {
   const app = Fastify({ logger: true });
 
   const tokenManager = new JobTokenManager();
   const trustManager = new NodeTrustManager();
+  const nodeJwtManager = options.nodeJwtManager ?? new NodeJwtManager();
   const adminSecret = process.env.EDGEMESH_ADMIN_SECRET ?? "admin-dev";
 
   const events: EdgeMeshEvent[] = [];
@@ -50,6 +60,8 @@ export function buildControlPlane(
   }
 
   app.get("/health", async () => ({ ok: true }));
+
+  // ── Nodes ────────────────────────────────────────────────────────────────
 
   app.post<{ Body: RegisterNodeRequest }>(
     "/v1/nodes/register",
@@ -87,9 +99,23 @@ export function buildControlPlane(
       await store.upsertNode(req.body);
       await store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
       ctx.emit({ type: "node.registered", at: Date.now(), nodeId: req.body.nodeId });
-      return { ok: true, nodeId: req.body.nodeId, trusted: true };
+
+      const { token, exp } = nodeJwtManager.issue(req.body.nodeId);
+      return { ok: true, nodeId: req.body.nodeId, trusted: true, token, exp };
     }
   );
+
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/refresh-token", async (req, reply) => {
+    const jwt = extractNodeJwt(req, nodeJwtManager);
+    if (!jwt.ok) return reply.code(401).send({ ok: false, error: jwt.error });
+
+    const node = await store.getNode(jwt.nodeId);
+    if (!node) return reply.code(404).send({ ok: false, error: "unknown_node" });
+    if (node.revoked) return reply.code(403).send({ ok: false, error: "node_revoked" });
+
+    const { token, exp } = nodeJwtManager.issue(jwt.nodeId);
+    return { ok: true, token, exp };
+  });
 
   app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/revoke", async (req, reply) => {
     const adminToken = req.headers["x-admin-token"];
@@ -121,6 +147,11 @@ export function buildControlPlane(
       },
     },
     async (req, reply) => {
+      const jwt = extractNodeJwt(req, nodeJwtManager);
+      if (!jwt.ok) return reply.code(401).send({ ok: false, error: jwt.error });
+      if (jwt.nodeId !== req.params.nodeId)
+        return reply.code(403).send({ ok: false, error: "token_node_mismatch" });
+
       const node = await store.getNode(req.params.nodeId);
       if (!node) return reply.code(404).send({ ok: false, error: "unknown_node" });
       if (node.revoked) return reply.code(403).send({ ok: false, error: "node_revoked" });
@@ -130,6 +161,8 @@ export function buildControlPlane(
       return { ok: true };
     }
   );
+
+  // ── Job tokens + tasks ────────────────────────────────────────────────────
 
   app.post<{
     Body: { jobId: string; targetNodeId?: string; requiredTags?: string[]; ttlMs?: number };
@@ -207,7 +240,12 @@ export function buildControlPlane(
     }
   );
 
-  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/tasks/claim", async (req) => {
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/tasks/claim", async (req, reply) => {
+    const jwt = extractNodeJwt(req, nodeJwtManager);
+    if (!jwt.ok) return reply.code(401).send({ ok: false, error: jwt.error });
+    if (jwt.nodeId !== req.params.nodeId)
+      return reply.code(403).send({ ok: false, error: "token_node_mismatch" });
+
     const task = await store.claimTask(req.params.nodeId);
     if (task) {
       ctx.emit({
@@ -221,13 +259,20 @@ export function buildControlPlane(
   });
 
   app.post<{ Params: { taskId: string } }>("/v1/tasks/:taskId/ack", async (req, reply) => {
-    const task = await store.setTaskStatus(req.params.taskId, "running");
+    const jwt = extractNodeJwt(req, nodeJwtManager);
+    if (!jwt.ok) return reply.code(401).send({ ok: false, error: jwt.error });
+
+    const task = await store.getTask(req.params.taskId);
     if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
+    if (task.assignedNodeId !== jwt.nodeId)
+      return reply.code(403).send({ ok: false, error: "token_node_mismatch" });
+
+    await store.setTaskStatus(req.params.taskId, "running");
     ctx.emit({
       type: "task.running",
       at: Date.now(),
       taskId: req.params.taskId,
-      nodeId: task.assignedNodeId,
+      nodeId: jwt.nodeId,
     });
     return { ok: true };
   });
@@ -252,6 +297,11 @@ export function buildControlPlane(
       },
     },
     async (req, reply) => {
+      const jwt = extractNodeJwt(req, nodeJwtManager);
+      if (!jwt.ok) return reply.code(401).send({ ok: false, error: jwt.error });
+      if (req.body.nodeId !== jwt.nodeId)
+        return reply.code(403).send({ ok: false, error: "token_node_mismatch" });
+
       const task = await store.getTask(req.params.taskId);
       if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
 
@@ -306,6 +356,8 @@ export function buildControlPlane(
     }
   );
 
+  // ── Queries ───────────────────────────────────────────────────────────────
+
   app.get<{ Querystring: { status?: Task["status"] } }>(
     "/v1/tasks",
     {
@@ -318,16 +370,11 @@ export function buildControlPlane(
         },
       },
     },
-    async (req) => {
-      return { ok: true, tasks: await store.listTasks(req.query.status) };
-    }
+    async (req) => ({ ok: true, tasks: await store.listTasks(req.query.status) })
   );
 
   app.get("/v1/tasks/queue", async () => ({ ok: true, tasks: await store.listQueuedTasks() }));
-  app.get("/v1/tasks/running", async () => ({
-    ok: true,
-    tasks: await store.listRunningTasks(),
-  }));
+  app.get("/v1/tasks/running", async () => ({ ok: true, tasks: await store.listRunningTasks() }));
 
   app.get("/v1/observability/queue-depth", async () => ({
     ok: true,
@@ -364,7 +411,6 @@ export function buildControlPlane(
 
     const enqueuedAt = new Map<string, number>();
     const claimLatencies: number[] = [];
-
     for (const e of events) {
       if (e.type === "task.enqueued" && e.taskId) enqueuedAt.set(e.taskId, e.at);
       if (e.type === "task.claimed" && e.taskId) {
@@ -372,10 +418,9 @@ export function buildControlPlane(
         if (typeof start === "number") claimLatencies.push(Math.max(0, e.at - start));
       }
     }
-
     const avgClaimLatencyMs =
       claimLatencies.length > 0
-        ? Math.round(claimLatencies.reduce((sum, v) => sum + v, 0) / claimLatencies.length)
+        ? Math.round(claimLatencies.reduce((s, v) => s + v, 0) / claimLatencies.length)
         : null;
 
     return {
@@ -395,6 +440,8 @@ export function buildControlPlane(
     if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
     return { ok: true, task, result: (await store.getTaskResult(task.taskId)) ?? null };
   });
+
+  // ── DLQ ───────────────────────────────────────────────────────────────────
 
   app.get("/v1/dlq", async () => ({ ok: true, entries: await store.listDlq() }));
 

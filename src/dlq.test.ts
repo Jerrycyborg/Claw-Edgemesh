@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildControlPlane } from "./control-plane.js";
 
-async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: string) {
+async function bootstrapNode(
+  app: ReturnType<typeof buildControlPlane>,
+  nodeId: string
+): Promise<string> {
   const res = await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
@@ -14,10 +17,12 @@ async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: 
     },
   });
   assert.equal(res.statusCode, 200);
+  const nodeToken = res.json().token as string;
 
   const hb = await app.inject({
     method: "POST",
     url: `/v1/nodes/${nodeId}/heartbeat`,
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId,
@@ -28,6 +33,7 @@ async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: 
     },
   });
   assert.equal(hb.statusCode, 200);
+  return nodeToken;
 }
 
 async function issueToken(app: ReturnType<typeof buildControlPlane>, jobId: string) {
@@ -45,7 +51,7 @@ test("exhausted task lands in DLQ after max attempts", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await bootstrapNode(app, "node-dlq-1");
+  const nodeToken1 = await bootstrapNode(app, "node-dlq-1");
 
   const token = await issueToken(app, "task-dlq-1");
 
@@ -62,12 +68,21 @@ test("exhausted task lands in DLQ after max attempts", async () => {
   });
 
   // Claim → fail (maxAttempts: 1 means no retry)
-  await app.inject({ method: "POST", url: "/v1/nodes/node-dlq-1/tasks/claim" });
-  await app.inject({ method: "POST", url: "/v1/tasks/task-dlq-1/ack" });
+  await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-dlq-1/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken1}` },
+  });
+  await app.inject({
+    method: "POST",
+    url: "/v1/tasks/task-dlq-1/ack",
+    headers: { authorization: `Bearer ${nodeToken1}` },
+  });
 
   const result = await app.inject({
     method: "POST",
     url: "/v1/tasks/task-dlq-1/result",
+    headers: { authorization: `Bearer ${nodeToken1}` },
     payload: {
       schemaVersion: "1.0",
       taskId: "task-dlq-1",
@@ -111,7 +126,7 @@ test("replay requeues task and removes it from DLQ", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await bootstrapNode(app, "node-dlq-2");
+  const nodeToken2 = await bootstrapNode(app, "node-dlq-2");
 
   const token = await issueToken(app, "task-dlq-2");
 
@@ -127,11 +142,20 @@ test("replay requeues task and removes it from DLQ", async () => {
     },
   });
 
-  await app.inject({ method: "POST", url: "/v1/nodes/node-dlq-2/tasks/claim" });
-  await app.inject({ method: "POST", url: "/v1/tasks/task-dlq-2/ack" });
+  await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-dlq-2/tasks/claim",
+    headers: { authorization: `Bearer ${nodeToken2}` },
+  });
+  await app.inject({
+    method: "POST",
+    url: "/v1/tasks/task-dlq-2/ack",
+    headers: { authorization: `Bearer ${nodeToken2}` },
+  });
   await app.inject({
     method: "POST",
     url: "/v1/tasks/task-dlq-2/result",
+    headers: { authorization: `Bearer ${nodeToken2}` },
     payload: {
       schemaVersion: "1.0",
       taskId: "task-dlq-2",

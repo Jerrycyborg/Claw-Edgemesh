@@ -85,6 +85,57 @@ export class JobTokenManager {
   }
 }
 
+export class NodeJwtManager {
+  private readonly secret: string;
+  private readonly ttlMs: number;
+
+  constructor(secret?: string, ttlMs?: number) {
+    this.secret = secret ?? process.env.EDGEMESH_NODE_JWT_SECRET ?? "node-jwt-dev";
+    this.ttlMs = ttlMs ?? 24 * 60 * 60 * 1000; // 24 h default
+  }
+
+  issue(nodeId: string): { token: string; exp: number } {
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = Math.floor((Date.now() + this.ttlMs) / 1000);
+    const header = b64(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+    const payload = b64(JSON.stringify({ sub: nodeId, iat, exp }));
+    const message = `${header}.${payload}`;
+    const sig = crypto.createHmac("sha256", this.secret).update(message).digest("base64url");
+    return { token: `${message}.${sig}`, exp: exp * 1000 };
+  }
+
+  verify(token: string): { ok: true; nodeId: string } | { ok: false; error: string } {
+    const parts = token.split(".");
+    if (parts.length !== 3) return { ok: false, error: "token_malformed" };
+    const [header, payload, sig] = parts;
+
+    const message = `${header}.${payload}`;
+    const expectedSig = crypto
+      .createHmac("sha256", this.secret)
+      .update(message)
+      .digest("base64url");
+    const sigBuf = Buffer.from(sig, "base64url");
+    const expectedBuf = Buffer.from(expectedSig, "base64url");
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+      return { ok: false, error: "token_signature_invalid" };
+    }
+
+    let claims: { sub?: string; exp?: number };
+    try {
+      claims = JSON.parse(fromB64(payload));
+    } catch {
+      return { ok: false, error: "token_payload_invalid" };
+    }
+
+    if (!claims.sub) return { ok: false, error: "token_missing_subject" };
+    if (!claims.exp || Math.floor(Date.now() / 1000) > claims.exp) {
+      return { ok: false, error: "token_expired" };
+    }
+
+    return { ok: true, nodeId: claims.sub };
+  }
+}
+
 export class NodeTrustManager {
   private bootstrapSecret: string;
 

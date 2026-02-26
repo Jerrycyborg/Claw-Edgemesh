@@ -5,7 +5,10 @@ import { executeRealTask } from "./node-agent/executor.js";
 import { JobTokenManager } from "./security.js";
 import type { Task } from "./contracts.js";
 
-async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: string) {
+async function bootstrapNode(
+  app: ReturnType<typeof buildControlPlane>,
+  nodeId: string
+): Promise<string> {
   const register = await app.inject({
     method: "POST",
     url: "/v1/nodes/register",
@@ -17,10 +20,12 @@ async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: 
     },
   });
   assert.equal(register.statusCode, 200);
+  const nodeToken = register.json().token as string;
 
   const hb = await app.inject({
     method: "POST",
     url: `/v1/nodes/${nodeId}/heartbeat`,
+    headers: { authorization: `Bearer ${nodeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId,
@@ -31,13 +36,14 @@ async function bootstrapNode(app: ReturnType<typeof buildControlPlane>, nodeId: 
     },
   });
   assert.equal(hb.statusCode, 200);
+  return nodeToken;
 }
 
 test("signed job token issuance + replay rejection", async () => {
   const app = buildControlPlane();
   await app.ready();
 
-  await bootstrapNode(app, "node-auth");
+  await bootstrapNode(app, "node-auth"); // JWT not needed for this test
 
   const tokenResp = await app.inject({
     method: "POST",
@@ -93,7 +99,7 @@ test("node trust bootstrap + revocation blocks heartbeat", async () => {
   });
   assert.equal(denied.statusCode, 401);
 
-  await bootstrapNode(app, "node-revoke");
+  const revokeToken = await bootstrapNode(app, "node-revoke");
 
   const revoke = await app.inject({
     method: "POST",
@@ -105,6 +111,7 @@ test("node trust bootstrap + revocation blocks heartbeat", async () => {
   const hbAfter = await app.inject({
     method: "POST",
     url: "/v1/nodes/node-revoke/heartbeat",
+    headers: { authorization: `Bearer ${revokeToken}` },
     payload: {
       schemaVersion: "1.0",
       nodeId: "node-revoke",
@@ -131,7 +138,7 @@ test("observability endpoints expose queue depth/latency/success ratio", async (
   const app = buildControlPlane();
   await app.ready();
 
-  await bootstrapNode(app, "node-obs");
+  const obsNodeToken = await bootstrapNode(app, "node-obs");
 
   const tokenResp = await app.inject({
     method: "POST",
@@ -157,10 +164,15 @@ test("observability endpoints expose queue depth/latency/success ratio", async (
   assert.equal(q.statusCode, 200);
   assert.equal(q.json().queueDepth, 1);
 
-  await app.inject({ method: "POST", url: "/v1/nodes/node-obs/tasks/claim" });
+  await app.inject({
+    method: "POST",
+    url: "/v1/nodes/node-obs/tasks/claim",
+    headers: { authorization: `Bearer ${obsNodeToken}` },
+  });
   await app.inject({
     method: "POST",
     url: "/v1/tasks/task-obs-1/result",
+    headers: { authorization: `Bearer ${obsNodeToken}` },
     payload: {
       schemaVersion: "1.0",
       taskId: "task-obs-1",

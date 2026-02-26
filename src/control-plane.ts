@@ -15,8 +15,19 @@ import { computeRetryDecision } from "./control/retry-policy.js";
 
 const SCHEMA_VERSION = "1.0" as const;
 
+function createStore(): ControlPlaneStore {
+  if (process.env.EDGEMESH_STORE === "redis") {
+    // Dynamically import to keep ioredis optional at runtime when not needed.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { RedisControlPlaneStore } = require("./persistence/redis-adapter.js");
+    const redisUrl = process.env.EDGEMESH_REDIS_URL ?? "redis://localhost:6379";
+    return new RedisControlPlaneStore(redisUrl) as ControlPlaneStore;
+  }
+  return new InMemoryControlPlaneStore();
+}
+
 export function buildControlPlane(
-  store: ControlPlaneStore = new InMemoryControlPlaneStore(),
+  store: ControlPlaneStore = createStore(),
   options: { plugins?: EdgeMeshPlugin[] } = {}
 ): FastifyInstance {
   const app = Fastify({ logger: true });
@@ -73,8 +84,8 @@ export function buildControlPlane(
         return reply.code(401).send({ ok: false, error: "node_bootstrap_denied" });
       }
 
-      store.upsertNode(req.body);
-      store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
+      await store.upsertNode(req.body);
+      await store.setNodeTrust(req.body.nodeId, { trusted: true, revoked: false });
       ctx.emit({ type: "node.registered", at: Date.now(), nodeId: req.body.nodeId });
       return { ok: true, nodeId: req.body.nodeId, trusted: true };
     }
@@ -84,12 +95,12 @@ export function buildControlPlane(
     const adminToken = req.headers["x-admin-token"];
     if (adminToken !== adminSecret)
       return reply.code(401).send({ ok: false, error: "unauthorized" });
-    store.setNodeTrust(req.params.nodeId, { trusted: false, revoked: true });
+    await store.setNodeTrust(req.params.nodeId, { trusted: false, revoked: true });
     ctx.emit({ type: "node.revoked", at: Date.now(), nodeId: req.params.nodeId });
     return { ok: true };
   });
 
-  app.get("/v1/nodes", async () => ({ nodes: store.listNodes() }));
+  app.get("/v1/nodes", async () => ({ nodes: await store.listNodes() }));
 
   app.post<{ Params: { nodeId: string }; Body: HeartbeatRequest }>(
     "/v1/nodes/:nodeId/heartbeat",
@@ -110,10 +121,10 @@ export function buildControlPlane(
       },
     },
     async (req, reply) => {
-      const node = store.getNode(req.params.nodeId);
+      const node = await store.getNode(req.params.nodeId);
       if (!node) return reply.code(404).send({ ok: false, error: "unknown_node" });
       if (node.revoked) return reply.code(403).send({ ok: false, error: "node_revoked" });
-      const ok = store.setHeartbeat(req.params.nodeId, req.body);
+      const ok = await store.setHeartbeat(req.params.nodeId, req.body);
       if (!ok) return reply.code(404).send({ ok: false, error: "unknown_node" });
       ctx.emit({ type: "node.heartbeat", at: Date.now(), nodeId: req.params.nodeId });
       return { ok: true };
@@ -190,14 +201,14 @@ export function buildControlPlane(
         status: "queued",
         createdAt: Date.now(),
       };
-      store.enqueueTask(newTask);
+      await store.enqueueTask(newTask);
       ctx.emit({ type: "task.enqueued", at: Date.now(), taskId: newTask.taskId });
       return { ok: true, taskId: newTask.taskId };
     }
   );
 
   app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/tasks/claim", async (req) => {
-    const task = store.claimTask(req.params.nodeId);
+    const task = await store.claimTask(req.params.nodeId);
     if (task) {
       ctx.emit({
         type: "task.claimed",
@@ -210,7 +221,7 @@ export function buildControlPlane(
   });
 
   app.post<{ Params: { taskId: string } }>("/v1/tasks/:taskId/ack", async (req, reply) => {
-    const task = store.setTaskStatus(req.params.taskId, "running");
+    const task = await store.setTaskStatus(req.params.taskId, "running");
     if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
     ctx.emit({
       type: "task.running",
@@ -241,12 +252,12 @@ export function buildControlPlane(
       },
     },
     async (req, reply) => {
-      const task = store.getTask(req.params.taskId);
+      const task = await store.getTask(req.params.taskId);
       if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
 
       if (req.body.ok) {
-        store.setTaskStatus(task.taskId, "done");
-        store.setTaskResult(req.body);
+        await store.setTaskStatus(task.taskId, "done");
+        await store.setTaskResult(req.body);
         ctx.emit({
           type: "task.done",
           at: Date.now(),
@@ -262,7 +273,7 @@ export function buildControlPlane(
       });
 
       if (retry.retry) {
-        store.requeueForRetry(task.taskId, Date.now() + retry.delayMs);
+        await store.requeueForRetry(task.taskId, Date.now() + retry.delayMs);
         ctx.emit({
           type: "task.failed",
           at: Date.now(),
@@ -273,8 +284,8 @@ export function buildControlPlane(
         return { ok: true, retrying: true, delayMs: retry.delayMs };
       }
 
-      store.setTaskStatus(task.taskId, "failed");
-      store.setTaskResult(req.body);
+      await store.setTaskStatus(task.taskId, "failed");
+      await store.setTaskResult(req.body);
       const dlqEntry: DlqEntry = {
         schemaVersion: SCHEMA_VERSION,
         taskId: task.taskId,
@@ -283,7 +294,7 @@ export function buildControlPlane(
         reason: "max_attempts_exhausted",
         enqueuedAt: Date.now(),
       };
-      store.enqueueDlq(dlqEntry);
+      await store.enqueueDlq(dlqEntry);
       ctx.emit({
         type: "task.failed",
         at: Date.now(),
@@ -308,16 +319,19 @@ export function buildControlPlane(
       },
     },
     async (req) => {
-      return { ok: true, tasks: store.listTasks(req.query.status) };
+      return { ok: true, tasks: await store.listTasks(req.query.status) };
     }
   );
 
-  app.get("/v1/tasks/queue", async () => ({ ok: true, tasks: store.listQueuedTasks() }));
-  app.get("/v1/tasks/running", async () => ({ ok: true, tasks: store.listRunningTasks() }));
+  app.get("/v1/tasks/queue", async () => ({ ok: true, tasks: await store.listQueuedTasks() }));
+  app.get("/v1/tasks/running", async () => ({
+    ok: true,
+    tasks: await store.listRunningTasks(),
+  }));
 
   app.get("/v1/observability/queue-depth", async () => ({
     ok: true,
-    queueDepth: store.listTasks("queued").length,
+    queueDepth: (await store.listTasks("queued")).length,
   }));
 
   app.get("/v1/observability/node-health-timeline", async () => {
@@ -331,11 +345,19 @@ export function buildControlPlane(
   });
 
   app.get("/v1/runs/summary", async () => {
-    const queued = store.listTasks("queued").length;
-    const claimed = store.listTasks("claimed").length;
-    const running = store.listTasks("running").length;
-    const done = store.listTasks("done").length;
-    const failed = store.listTasks("failed").length;
+    const [queuedTasks, claimedTasks, runningTasks, doneTasks, failedTasks] = await Promise.all([
+      store.listTasks("queued"),
+      store.listTasks("claimed"),
+      store.listTasks("running"),
+      store.listTasks("done"),
+      store.listTasks("failed"),
+    ]);
+
+    const queued = queuedTasks.length;
+    const claimed = claimedTasks.length;
+    const running = runningTasks.length;
+    const done = doneTasks.length;
+    const failed = failedTasks.length;
 
     const finished = done + failed;
     const successRatio = finished > 0 ? done / finished : null;
@@ -369,15 +391,15 @@ export function buildControlPlane(
   });
 
   app.get<{ Params: { taskId: string } }>("/v1/tasks/:taskId", async (req, reply) => {
-    const task = store.getTask(req.params.taskId);
+    const task = await store.getTask(req.params.taskId);
     if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
-    return { ok: true, task, result: store.getTaskResult(task.taskId) ?? null };
+    return { ok: true, task, result: (await store.getTaskResult(task.taskId)) ?? null };
   });
 
-  app.get("/v1/dlq", async () => ({ ok: true, entries: store.listDlq() }));
+  app.get("/v1/dlq", async () => ({ ok: true, entries: await store.listDlq() }));
 
   app.get<{ Params: { taskId: string } }>("/v1/dlq/:taskId", async (req, reply) => {
-    const entry = store.getDlqEntry(req.params.taskId);
+    const entry = await store.getDlqEntry(req.params.taskId);
     if (!entry) return reply.code(404).send({ ok: false, error: "dlq_entry_not_found" });
     return { ok: true, entry };
   });
@@ -386,7 +408,7 @@ export function buildControlPlane(
     const adminToken = req.headers["x-admin-token"];
     if (adminToken !== adminSecret)
       return reply.code(401).send({ ok: false, error: "unauthorized" });
-    const ok = store.requeueFromDlq(req.params.taskId);
+    const ok = await store.requeueFromDlq(req.params.taskId);
     if (!ok) return reply.code(404).send({ ok: false, error: "dlq_entry_not_found" });
     ctx.emit({ type: "task.enqueued", at: Date.now(), taskId: req.params.taskId });
     return { ok: true, taskId: req.params.taskId };

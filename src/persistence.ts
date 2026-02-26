@@ -15,29 +15,29 @@ type NodeRecord = RegisterNodeRequest & {
 };
 
 export interface ControlPlaneStore {
-  upsertNode(node: RegisterNodeRequest): void;
-  getNode(nodeId: string): NodeView | undefined;
-  listNodes(): NodeView[];
-  setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): boolean;
-  setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): boolean;
+  upsertNode(node: RegisterNodeRequest): Promise<void>;
+  getNode(nodeId: string): Promise<NodeView | undefined>;
+  listNodes(): Promise<NodeView[]>;
+  setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): Promise<boolean>;
+  setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): Promise<boolean>;
 
-  enqueueTask(task: Task): void;
-  claimTask(nodeId: string): Task | null;
-  setTaskStatus(taskId: string, status: Task["status"]): Task | null;
-  getTask(taskId: string): Task | undefined;
-  listQueuedTasks(): Task[];
-  listRunningTasks(): Task[];
-  listTasks(status?: Task["status"]): Task[];
+  enqueueTask(task: Task): Promise<void>;
+  claimTask(nodeId: string): Promise<Task | null>;
+  setTaskStatus(taskId: string, status: Task["status"]): Promise<Task | null>;
+  getTask(taskId: string): Promise<Task | undefined>;
+  listQueuedTasks(): Promise<Task[]>;
+  listRunningTasks(): Promise<Task[]>;
+  listTasks(status?: Task["status"]): Promise<Task[]>;
 
-  requeueForRetry(taskId: string, retryAfter: number): boolean;
+  requeueForRetry(taskId: string, retryAfter: number): Promise<boolean>;
 
-  setTaskResult(result: TaskResult): void;
-  getTaskResult(taskId: string): TaskResult | undefined;
+  setTaskResult(result: TaskResult): Promise<void>;
+  getTaskResult(taskId: string): Promise<TaskResult | undefined>;
 
-  enqueueDlq(entry: DlqEntry): void;
-  listDlq(): DlqEntry[];
-  getDlqEntry(taskId: string): DlqEntry | undefined;
-  requeueFromDlq(taskId: string): boolean;
+  enqueueDlq(entry: DlqEntry): Promise<void>;
+  listDlq(): Promise<DlqEntry[]>;
+  getDlqEntry(taskId: string): Promise<DlqEntry | undefined>;
+  requeueFromDlq(taskId: string): Promise<boolean>;
 }
 
 export class InMemoryControlPlaneStore implements ControlPlaneStore {
@@ -58,22 +58,22 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     this.heartbeatDegradedMs = options.heartbeatDegradedMs ?? 30_000;
   }
 
-  upsertNode(node: RegisterNodeRequest): void {
+  async upsertNode(node: RegisterNodeRequest): Promise<void> {
     const existing = this.nodes.get(node.nodeId);
     this.nodes.set(node.nodeId, { ...node, lastHeartbeat: existing?.lastHeartbeat });
   }
 
-  getNode(nodeId: string): NodeView | undefined {
+  async getNode(nodeId: string): Promise<NodeView | undefined> {
     const node = this.nodes.get(nodeId);
     if (!node) return undefined;
     return this.toNodeView(node);
   }
 
-  listNodes(): NodeView[] {
+  async listNodes(): Promise<NodeView[]> {
     return [...this.nodes.values()].map((n) => this.toNodeView(n));
   }
 
-  setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): boolean {
+  async setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): Promise<boolean> {
     const node = this.nodes.get(nodeId);
     if (!node) return false;
     node.lastHeartbeat = heartbeat;
@@ -81,7 +81,10 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
-  setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): boolean {
+  async setNodeTrust(
+    nodeId: string,
+    trust: { trusted?: boolean; revoked?: boolean }
+  ): Promise<boolean> {
     const node = this.nodes.get(nodeId);
     if (!node) return false;
     node.trusted = trust.trusted ?? node.trusted;
@@ -90,12 +93,12 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
-  enqueueTask(task: Task): void {
+  async enqueueTask(task: Task): Promise<void> {
     this.tasks.set(task.taskId, task);
     this.taskQueue.push(task.taskId);
   }
 
-  claimTask(nodeId: string): Task | null {
+  async claimTask(nodeId: string): Promise<Task | null> {
     this.requeueExpiredClaims();
 
     const node = this.nodes.get(nodeId);
@@ -134,7 +137,7 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return task;
   }
 
-  setTaskStatus(taskId: string, status: Task["status"]): Task | null {
+  async setTaskStatus(taskId: string, status: Task["status"]): Promise<Task | null> {
     const task = this.tasks.get(taskId);
     if (!task) return null;
     task.status = status;
@@ -146,26 +149,26 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return task;
   }
 
-  getTask(taskId: string): Task | undefined {
+  async getTask(taskId: string): Promise<Task | undefined> {
     return this.tasks.get(taskId);
   }
 
-  listQueuedTasks(): Task[] {
-    return [...this.tasks.values()].filter((task) => task.status === "queued");
+  async listQueuedTasks(): Promise<Task[]> {
+    return this.listTasks("queued");
   }
 
-  listRunningTasks(): Task[] {
+  async listRunningTasks(): Promise<Task[]> {
     return [...this.tasks.values()].filter(
       (task) => task.status === "claimed" || task.status === "running"
     );
   }
 
-  listTasks(status?: Task["status"]): Task[] {
+  async listTasks(status?: Task["status"]): Promise<Task[]> {
     if (!status) return [...this.tasks.values()];
     return [...this.tasks.values()].filter((task) => task.status === status);
   }
 
-  requeueForRetry(taskId: string, retryAfter: number): boolean {
+  async requeueForRetry(taskId: string, retryAfter: number): Promise<boolean> {
     const task = this.tasks.get(taskId);
     if (!task) return false;
 
@@ -181,27 +184,27 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
-  setTaskResult(result: TaskResult): void {
+  async setTaskResult(result: TaskResult): Promise<void> {
     this.results.set(result.taskId, result);
   }
 
-  getTaskResult(taskId: string): TaskResult | undefined {
+  async getTaskResult(taskId: string): Promise<TaskResult | undefined> {
     return this.results.get(taskId);
   }
 
-  enqueueDlq(entry: DlqEntry): void {
+  async enqueueDlq(entry: DlqEntry): Promise<void> {
     this.dlq.set(entry.taskId, entry);
   }
 
-  listDlq(): DlqEntry[] {
+  async listDlq(): Promise<DlqEntry[]> {
     return [...this.dlq.values()];
   }
 
-  getDlqEntry(taskId: string): DlqEntry | undefined {
+  async getDlqEntry(taskId: string): Promise<DlqEntry | undefined> {
     return this.dlq.get(taskId);
   }
 
-  requeueFromDlq(taskId: string): boolean {
+  async requeueFromDlq(taskId: string): Promise<boolean> {
     const entry = this.dlq.get(taskId);
     if (!entry) return false;
 

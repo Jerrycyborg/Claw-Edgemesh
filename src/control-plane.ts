@@ -1,3 +1,4 @@
+import { PassThrough } from "node:stream";
 import Fastify from "fastify";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
@@ -60,6 +61,16 @@ export function buildControlPlane(
     plugin.register(app, ctx);
   }
 
+  // SSE fan-out — wrap ctx.emit after plugins so all events reach subscribers
+  const sseSubscribers = new Set<(event: EdgeMeshEvent) => void>();
+  {
+    const prevEmit = ctx.emit;
+    ctx.emit = (event: EdgeMeshEvent) => {
+      prevEmit(event);
+      for (const sub of sseSubscribers) sub(event);
+    };
+  }
+
   app.get("/health", async () => ({ ok: true }));
 
   app.get("/metrics", async (_req, reply) => {
@@ -114,6 +125,25 @@ export function buildControlPlane(
 
     reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
     return reply.send(lines.join("\n"));
+  });
+
+  app.get("/v1/events", (req, reply) => {
+    const stream = new PassThrough();
+    stream.write(": connected\n\n");
+
+    const send = (event: EdgeMeshEvent) => stream.write(`data: ${JSON.stringify(event)}\n\n`);
+    sseSubscribers.add(send);
+
+    const cleanup = () => {
+      sseSubscribers.delete(send);
+      if (!stream.destroyed) stream.end();
+    };
+    req.raw.on("close", cleanup);
+
+    reply.header("content-type", "text/event-stream; charset=utf-8");
+    reply.header("cache-control", "no-cache");
+    reply.header("x-accel-buffering", "no");
+    return reply.send(stream);
   });
 
   // ── Nodes ────────────────────────────────────────────────────────────────

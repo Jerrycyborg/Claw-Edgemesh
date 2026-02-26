@@ -6,7 +6,9 @@ export interface TelemetrySnapshot {
   events: EdgeMeshEvent[];
 }
 
-export function createTelemetryPlugin(options: { maxEvents?: number } = {}): EdgeMeshPlugin {
+export type TelemetryPlugin = EdgeMeshPlugin & { snapshot(): TelemetrySnapshot };
+
+export function createTelemetryPlugin(options: { maxEvents?: number } = {}): TelemetryPlugin {
   const maxEvents = options.maxEvents ?? 200;
   const counters = new Map<string, number>();
   const events: EdgeMeshEvent[] = [];
@@ -40,6 +42,10 @@ export function createTelemetryPlugin(options: { maxEvents?: number } = {}): Edg
         counters: Object.fromEntries(counters),
         events,
       }));
+    },
+
+    snapshot(): TelemetrySnapshot {
+      return { counters: Object.fromEntries(counters), events: [...events] };
     },
   };
 }

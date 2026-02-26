@@ -1,0 +1,37 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  control-plane:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      EDGEMESH_STORE: redis
+      EDGEMESH_REDIS_URL: redis://redis:6379
+      # Override these in production:
+      EDGEMESH_BOOTSTRAP_SECRET: "${EDGEMESH_BOOTSTRAP_SECRET:-bootstrap-dev}"
+      EDGEMESH_ADMIN_SECRET: "${EDGEMESH_ADMIN_SECRET:-admin-dev}"
+      EDGEMESH_NODE_JWT_SECRET: "${EDGEMESH_NODE_JWT_SECRET:-node-jwt-dev}"
+      EDGEMESH_JOB_TOKEN_SECRET: "${EDGEMESH_JOB_TOKEN_SECRET:-dev-secret}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data:

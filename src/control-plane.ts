@@ -9,7 +9,7 @@ import type {
 } from "./contracts.js";
 import { InMemoryControlPlaneStore, type ControlPlaneStore } from "./persistence.js";
 import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
-import { createTelemetryPlugin } from "./plugins/telemetry-plugin.js";
+import { createTelemetryPlugin, type TelemetryPlugin } from "./plugins/telemetry-plugin.js";
 import { JobTokenManager, NodeJwtManager, NodeTrustManager } from "./security.js";
 import { computeRetryDecision } from "./control/retry-policy.js";
 
@@ -54,12 +54,67 @@ export function buildControlPlane(
     },
   };
 
-  const plugins = options.plugins ?? [createTelemetryPlugin()];
+  const defaultTelemetry: TelemetryPlugin | null = options.plugins ? null : createTelemetryPlugin();
+  const plugins = options.plugins ?? [defaultTelemetry!];
   for (const plugin of plugins) {
     plugin.register(app, ctx);
   }
 
   app.get("/health", async () => ({ ok: true }));
+
+  app.get("/metrics", async (_req, reply) => {
+    const [allTasks, allNodes] = await Promise.all([store.listTasks(), store.listNodes()]);
+
+    const queueDepth = allTasks.filter((t) => t.status === "queued").length;
+    const runningTasks = allTasks.filter(
+      (t) => t.status === "claimed" || t.status === "running"
+    ).length;
+    const nodesByState = { healthy: 0, degraded: 0, offline: 0 };
+    for (const n of allNodes) nodesByState[n.freshnessState]++;
+
+    const snapshot = defaultTelemetry?.snapshot() ?? { counters: {} as Record<string, number> };
+    const c = snapshot.counters;
+
+    const lines: string[] = [
+      "# HELP edgemesh_http_requests_total Total HTTP requests processed",
+      "# TYPE edgemesh_http_requests_total counter",
+      `edgemesh_http_requests_total ${c["http.requests.total"] ?? 0}`,
+      "# HELP edgemesh_tasks_enqueued_total Tasks enqueued since startup",
+      "# TYPE edgemesh_tasks_enqueued_total counter",
+      `edgemesh_tasks_enqueued_total ${c["event.task.enqueued"] ?? 0}`,
+      "# HELP edgemesh_tasks_claimed_total Tasks claimed by nodes since startup",
+      "# TYPE edgemesh_tasks_claimed_total counter",
+      `edgemesh_tasks_claimed_total ${c["event.task.claimed"] ?? 0}`,
+      "# HELP edgemesh_tasks_done_total Tasks completed successfully since startup",
+      "# TYPE edgemesh_tasks_done_total counter",
+      `edgemesh_tasks_done_total ${c["event.task.done"] ?? 0}`,
+      "# HELP edgemesh_tasks_failed_total Tasks that failed (terminal) since startup",
+      "# TYPE edgemesh_tasks_failed_total counter",
+      `edgemesh_tasks_failed_total ${c["event.task.failed"] ?? 0}`,
+      "# HELP edgemesh_nodes_registered_total Nodes ever registered since startup",
+      "# TYPE edgemesh_nodes_registered_total counter",
+      `edgemesh_nodes_registered_total ${c["event.node.registered"] ?? 0}`,
+      "# HELP edgemesh_queue_depth Current number of queued tasks",
+      "# TYPE edgemesh_queue_depth gauge",
+      `edgemesh_queue_depth ${queueDepth}`,
+      "# HELP edgemesh_running_tasks Current number of claimed or running tasks",
+      "# TYPE edgemesh_running_tasks gauge",
+      `edgemesh_running_tasks ${runningTasks}`,
+      "# HELP edgemesh_nodes_healthy Current healthy nodes",
+      "# TYPE edgemesh_nodes_healthy gauge",
+      `edgemesh_nodes_healthy ${nodesByState.healthy}`,
+      "# HELP edgemesh_nodes_degraded Current degraded nodes",
+      "# TYPE edgemesh_nodes_degraded gauge",
+      `edgemesh_nodes_degraded ${nodesByState.degraded}`,
+      "# HELP edgemesh_nodes_offline Current offline nodes",
+      "# TYPE edgemesh_nodes_offline gauge",
+      `edgemesh_nodes_offline ${nodesByState.offline}`,
+      "",
+    ];
+
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return reply.send(lines.join("\n"));
+  });
 
   // ── Nodes ────────────────────────────────────────────────────────────────
 

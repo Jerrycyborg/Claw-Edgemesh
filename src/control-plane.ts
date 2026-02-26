@@ -128,6 +128,30 @@ export function buildControlPlane(
 
   app.get("/v1/nodes", async () => ({ nodes: await store.listNodes() }));
 
+  app.get<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/stats", async (req, reply) => {
+    const node = await store.getNode(req.params.nodeId);
+    if (!node) return reply.code(404).send({ ok: false, error: "node_not_found" });
+
+    const allTasks = await store.listTasks();
+    const mine = allTasks.filter((t) => t.assignedNodeId === req.params.nodeId);
+    const completed = mine.filter((t) => t.status === "done").length;
+    const failed = mine.filter((t) => t.status === "failed").length;
+    const running = mine.filter((t) => t.status === "claimed" || t.status === "running").length;
+    const total = mine.length;
+    const successRatio = completed + failed > 0 ? completed / (completed + failed) : null;
+
+    return {
+      ok: true,
+      nodeId: req.params.nodeId,
+      freshnessState: node.freshnessState,
+      tasksTotal: total,
+      tasksCompleted: completed,
+      tasksFailed: failed,
+      tasksRunning: running,
+      successRatio,
+    };
+  });
+
   app.post<{ Params: { nodeId: string }; Body: HeartbeatRequest }>(
     "/v1/nodes/:nodeId/heartbeat",
     {
@@ -211,6 +235,7 @@ export function buildControlPlane(
             targetNodeId: { type: "string" },
             requiredTags: { type: "array", items: { type: "string" } },
             maxAttempts: { type: "integer", minimum: 1, maximum: 10 },
+            priority: { type: "integer", minimum: 0, maximum: 100 },
           },
         },
       },

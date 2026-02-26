@@ -110,18 +110,25 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     if (activeOnNode >= node.capabilities.maxConcurrentTasks) return null;
 
     const now = Date.now();
-    const candidateId = this.taskQueue.find((taskId) => {
-      const t = this.tasks.get(taskId);
-      if (!t || t.status !== "queued") return false;
-      if (t.retryAfter && t.retryAfter > now) return false;
-      if (t.targetNodeId && t.targetNodeId !== nodeId) return false;
-      if (t.requiredTags?.length) {
-        const tags = new Set(node.capabilities.tags);
-        return t.requiredTags.every((tag) => tags.has(tag));
-      }
-      return true;
-    });
+    const nodeTags = new Set(node.capabilities.tags);
+    const candidates = this.taskQueue
+      .map((taskId) => this.tasks.get(taskId))
+      .filter((t): t is Task => {
+        if (!t || t.status !== "queued") return false;
+        if (t.retryAfter && t.retryAfter > now) return false;
+        if (t.targetNodeId && t.targetNodeId !== nodeId) return false;
+        if (t.requiredTags?.length && !t.requiredTags.every((tag) => nodeTags.has(tag)))
+          return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const pa = a.priority ?? 0;
+        const pb = b.priority ?? 0;
+        if (pb !== pa) return pb - pa; // higher priority first
+        return a.createdAt - b.createdAt; // FIFO tiebreak
+      });
 
+    const candidateId = candidates[0]?.taskId;
     if (!candidateId) return null;
 
     const task = this.tasks.get(candidateId)!;

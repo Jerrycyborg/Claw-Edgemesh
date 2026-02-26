@@ -98,20 +98,27 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
 
     const queuedIds = await this.redis.lrange("taskqueue", 0, -1);
     const now = Date.now();
+    const nodeTags = new Set(node.capabilities.tags);
 
-    for (const taskId of queuedIds) {
-      const raw = await this.redis.get(`task:${taskId}`);
-      if (!raw) continue;
-      const task = JSON.parse(raw) as Task;
+    const raws = await Promise.all(queuedIds.map((id) => this.redis.get(`task:${id}`)));
+    const candidates = raws
+      .map((raw) => (raw ? (JSON.parse(raw) as Task) : null))
+      .filter((task): task is Task => {
+        if (!task || task.status !== "queued") return false;
+        if (task.retryAfter && task.retryAfter > now) return false;
+        if (task.targetNodeId && task.targetNodeId !== nodeId) return false;
+        if (task.requiredTags?.length && !task.requiredTags.every((t) => nodeTags.has(t)))
+          return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const pa = a.priority ?? 0;
+        const pb = b.priority ?? 0;
+        if (pb !== pa) return pb - pa; // higher priority first
+        return a.createdAt - b.createdAt; // FIFO tiebreak
+      });
 
-      if (task.status !== "queued") continue;
-      if (task.retryAfter && task.retryAfter > now) continue;
-      if (task.targetNodeId && task.targetNodeId !== nodeId) continue;
-      if (task.requiredTags?.length) {
-        const tags = new Set(node.capabilities.tags);
-        if (!task.requiredTags.every((t) => tags.has(t))) continue;
-      }
-
+    for (const task of candidates) {
       const claimed = await this.tryClaimTask(task, nodeId);
       if (claimed) return claimed;
     }

@@ -38,6 +38,8 @@ export interface Task {
   targetNodeId?: string;
   requiredTags?: string[];
   maxAttempts?: number;
+  /** Higher number = higher urgency. Default 0. Tiebreak is FIFO (createdAt asc). */
+  priority?: number;
   status: "queued" | "claimed" | "running" | "done" | "failed";
   createdAt: number;
   claimedAt?: number;

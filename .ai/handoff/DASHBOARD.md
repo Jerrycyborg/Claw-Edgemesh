@@ -31,12 +31,13 @@
 | metrics.test.ts      | 4      | PASS         |
 | sse.test.ts          | 3      | PASS         |
 | cancellation.test.ts | 7      | PASS         |
-| **Total**            | **81** | **ALL PASS** |
+| timeout.test.ts      | 3      | PASS         |
+| **Total**            | **84** | **ALL PASS** |
 
 ## Pipeline State
 
 - **Current phase:** idle (all milestones complete)
-- **Next tasks:** T-002 (timeouts)
+- **Next tasks:** none (all complete)
 - **Blocked:** nothing
 
 ## Infrastructure
@@ -46,10 +47,8 @@
 | Local in-memory | WORKING | `npm start`                         |
 | Local Redis     | WORKING | `EDGEMESH_STORE=redis npm start`    |
 | Docker Compose  | READY   | `docker compose up`                 |
-| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ 2ae475a |
+| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ 94021ae |
 
 ## Open Tasks
 
-| ID    | Priority | Title                                 | Blocked by |
-| ----- | -------- | ------------------------------------- | ---------- |
-| T-002 | high     | Task timeouts (auto-fail stale tasks) | none       |
+None.

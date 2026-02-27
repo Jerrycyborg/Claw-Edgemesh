@@ -1,7 +1,7 @@
 <!-- SECTION: summary -->
 
-OpenClaw EdgeMesh control plane: all 6 milestones done + T-001 (cancellation) shipped.
-81/81 tests pass, build is clean. Next: T-002 (task timeouts + background reaper).
+OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
+84/84 tests pass, build is clean. No open tasks.
 
 <!-- /SECTION: summary -->
 
@@ -10,7 +10,7 @@ OpenClaw EdgeMesh control plane: all 6 milestones done + T-001 (cancellation) sh
 | Check                 | Status | Notes                |
 | --------------------- | ------ | -------------------- |
 | `npm run build` (tsc) | PASS   | Zero errors          |
-| `npm test` (81 tests) | PASS   | 81/81                |
+| `npm test` (84 tests) | PASS   | 84/84                |
 | ESLint                | PASS   | Runs via lint-staged |
 | Prettier              | PASS   | Runs via lint-staged |
 
@@ -74,9 +74,9 @@ OpenClaw EdgeMesh control plane: all 6 milestones done + T-001 (cancellation) sh
 
 <!-- SECTION: gaps -->
 
-| Gap                                                 | Severity | Task   |
-| --------------------------------------------------- | -------- | ------ |
-| No task timeouts (stale claimed tasks hang forever) | medium   | T-002  |
-| SSE fan-out only within single process              | low      | future |
+| Gap                                    | Severity | Task   |
+| -------------------------------------- | -------- | ------ |
+| SSE fan-out only within single process | low      | future |
+| SSE fan-out only within single process | low      | future |
 
 <!-- /SECTION: gaps -->

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-02-27 -- Session: Task timeouts T-002 (94021ae)
+
+**Agent:** claude-sonnet-4-6
+**Phase:** implementation
+**Commits:** 94021ae
+
+**Work done:**
+
+- Added `timeoutMs?: number` to Task in `contracts.ts` (`claimedAt` was already there).
+- Created `src/control/timeout-reaper.ts`: `startTimeoutReaper(store, ctx, intervalMs)` runs setInterval, finds tasks with expired claimedAt + timeoutMs, calls `computeRetryDecision` -- retry or DLQ with synthetic TaskResult `{ error: "task_timeout" }`.
+- Added `reaperIntervalMs?` option to `buildControlPlane`. Default 5000ms.
+- Registered `clearInterval(reaperHandle)` via `app.addHook("onClose", ...)` -- no leaked handles.
+- Added `timeoutMs` to POST /v1/tasks schema (100..300_000ms).
+- Wrote `src/timeout.test.ts` (3 tests, REAPER_MS=50, WAIT_MS=300): requeue on timeout, DLQ on maxAttempts=1, no-op without timeoutMs.
+- 84/84 tests pass, build clean.
+
+---
+
 ## 2026-02-27 -- Session: Task cancellation T-001 (2ae475a)
 
 **Agent:** claude-sonnet-4-6

@@ -3,42 +3,42 @@
   "project": "openclaw-edgemesh",
   "last_session": {
     "agent": "claude-sonnet-4-6",
-    "session_id": "session-2026-02-27-cancellation",
+    "session_id": "session-2026-02-27-timeouts",
     "timestamp": "2026-02-27T00:00:00Z",
-    "commit": "2ae475a",
+    "commit": "94021ae",
     "phase": "implementation",
-    "duration_minutes": 20
+    "duration_minutes": 15
   },
   "files": {
     "STATUS.md": {
-      "checksum": "sha256:629a79384330ffc9635408369394853cb15921b625f90a02d1b575596d10902b",
+      "checksum": "sha256:066b3e69985446a48357f908360754360aee5d8bb596c96146e6c2a48142a092",
       "updated": "2026-02-27T00:00:00Z",
       "lines": 82,
-      "summary": "All 6 milestones + T-001 done. 81/81 tests. Next: T-002 timeouts."
+      "summary": "All tasks done. 84/84 tests. No open gaps."
     },
     "NEXT_ACTIONS.md": {
-      "checksum": "sha256:bda7cd9789d09b6e7c4a3c66a16bb0b9c641b5c46d0cdf1b047d80080273c1d3",
+      "checksum": "sha256:a88f09551a219d4df1360e805355b08da35fb2220815bb5f188ce692e09f874b",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 63,
-      "summary": "1 task ready. T-002: task timeoutMs field + background reaper."
+      "lines": 22,
+      "summary": "No open tasks. Recently completed: T-002, T-001, SSE, metrics, scheduling, JWT, Redis, DLQ."
     },
     "LOG.md": {
-      "checksum": "sha256:e516529c7b319bedae18abb9a16a27dcfe14f9a079f57f3b8479bb865f799b6d",
+      "checksum": "sha256:323b5685256e4cdf8ece536b5246810ad308d5aef8430a4dc2787b7a0fd68138",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 102,
-      "summary": "Last entry: T-001 cancellation. 5 entries total."
+      "lines": 120,
+      "summary": "Last entry: T-002 timeouts. 6 entries total."
     },
     "DASHBOARD.md": {
-      "checksum": "sha256:ca9255a09d8df7683708648f321bf5905325aab19b7f17566545c96772e1320f",
+      "checksum": "sha256:29bf986bf7f0fb8ce329dad277941efbe33420113587415a30a1258af1fe5eb8",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 55,
-      "summary": "9 test suites green. 81/81 total. 1 open task (T-002)."
+      "lines": 54,
+      "summary": "10 test suites green. 84/84 total. No open tasks."
     },
     "TRUST.md": {
       "checksum": "sha256:a772519923bed6c079f60a4c741451b30c767f640fa199a5603bdb85eff813f7",
       "updated": "2026-02-27T00:00:00Z",
       "lines": 31,
-      "summary": "Core features verified by tests. Docker and multi-instance SSE not integration-tested."
+      "summary": "Core features verified. Docker and multi-instance SSE not integration-tested."
     },
     "CONVENTIONS.md": {
       "checksum": "sha256:da5e0c54a9860700f99728a925aa6ce1d7120cd1e14fd6d11b5b67ed67264ed4",
@@ -53,7 +53,7 @@
       "summary": "contracts -> persistence -> redis-adapter -> route -> tests. AAHP update checklist included."
     }
   },
-  "quick_context": "T-001 (cancellation) shipped: POST /v1/tasks/:taskId/cancel, 'cancelled' status in Task union, 7 new tests. 81/81 pass, build clean, pushed to Jerrycyborg/Claw-Edgemesh @ 2ae475a. Only T-002 remains: timeoutMs field on Task + background reaper that auto-fails stale claimed/running tasks.",
+  "quick_context": "All planned tasks complete. 84/84 tests pass, build clean, pushed to Jerrycyborg/Claw-Edgemesh @ 94021ae. Features: DLQ, Redis, JWT, scheduling, Prometheus/Docker, SSE, task cancellation, task timeouts with reaper. Ready for new tasks.",
   "token_budget": {
     "manifest_only": 80,
     "manifest_plus_core": 350,
@@ -71,10 +71,11 @@
     },
     "T-002": {
       "title": "Add task timeouts: timeoutMs field + background reaper",
-      "status": "ready",
+      "status": "done",
       "priority": "high",
       "depends_on": [],
-      "created": "2026-02-27T00:00:00Z"
+      "created": "2026-02-27T00:00:00Z",
+      "completed": "2026-02-27T00:00:00Z"
     }
   }
 }

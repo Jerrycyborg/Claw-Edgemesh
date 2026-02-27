@@ -1,0 +1,13 @@
+# Never write these patterns to handoff files
+*_KEY=*
+*_SECRET=*
+*_TOKEN=*
+*_PASSWORD=*
+Bearer *
+sk-*
+ghp_*
+*@*.com
+EDGEMESH_JWT_SECRET=*
+EDGEMESH_ADMIN_SECRET=*
+EDGEMESH_REDIS_URL=redis://*:*@*
+\b\d{3}-\d{2}-\d{4}\b

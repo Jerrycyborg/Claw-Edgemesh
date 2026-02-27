@@ -77,6 +77,5 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
 | Gap                                    | Severity | Task   |
 | -------------------------------------- | -------- | ------ |
 | SSE fan-out only within single process | low      | future |
-| SSE fan-out only within single process | low      | future |
 
 <!-- /SECTION: gaps -->

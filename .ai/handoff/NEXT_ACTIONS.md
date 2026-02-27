@@ -4,53 +4,6 @@ Priority order: top to bottom. Each task is self-contained -- start without aski
 
 ---
 
-## T-001: Add task cancellation endpoint
-
-**Goal:** Admin can cancel a queued task (remove from queue) or a running task (mark cancelled, emit event).
-
-**Context:**
-Currently tasks can only terminate by succeeding, failing, or exhausting retries. There is no way to
-cancel a task that is stuck in the queue or taking too long. This is the most common missing feature
-in production task queues.
-
-**What to do:**
-
-1. Add `"cancelled"` to the `Task["status"]` union in `src/contracts.ts`.
-2. Add `cancelTask(taskId: string): Promise<boolean>` to `ControlPlaneStore` interface in `src/persistence.ts`.
-3. Implement in `InMemoryControlPlaneStore`:
-   - If status is `queued`: remove from `taskQueue`, set status to `cancelled`, return true.
-   - If status is `claimed` or `running`: set status to `cancelled`, return true.
-   - If status is `done`, `failed`, or `cancelled`: return false (already terminal).
-4. Implement in `RedisControlPlaneStore` in `src/persistence/redis-adapter.ts` (same logic, use Redis).
-5. Add `POST /v1/tasks/:taskId/cancel` route to `src/control-plane.ts`:
-   - Requires `x-admin-token` header.
-   - Returns `{ ok: true }` on success, 404 if not found, 409 if already terminal.
-   - Emits `{ type: "task.cancelled", at: Date.now(), taskId }` via `ctx.emit`.
-6. Update `listTasks` filter options to include `cancelled` status.
-7. Write `src/cancellation.test.ts`:
-   - Cancel a queued task -- verify status becomes cancelled, not claimable.
-   - Cancel a running task -- verify status becomes cancelled.
-   - Cancel an already-done task -- expect 409.
-   - Cancel unknown task -- expect 404.
-   - Verify task.cancelled event appears in SSE.
-
-**Files:**
-
-- `src/contracts.ts` -- add "cancelled" to Task status union
-- `src/persistence.ts` -- interface + InMemoryControlPlaneStore
-- `src/persistence/redis-adapter.ts` -- RedisControlPlaneStore
-- `src/control-plane.ts` -- route
-- `src/cancellation.test.ts` -- new test file
-
-**Definition of done:**
-
-- [ ] All new tests pass
-- [ ] Existing 74 tests still pass
-- [ ] `npm run build` clean
-- [ ] `task.cancelled` event visible in SSE stream
-
----
-
 ## T-002: Add task timeout (auto-fail stale claimed/running tasks)
 
 **Goal:** Tasks with a `timeoutMs` field auto-fail if not completed within that window after being claimed.
@@ -99,11 +52,12 @@ fail hung tasks. `timeoutMs` on the Task gives operators per-task control.
 
 ## Recently Completed
 
-| ID  | Task                                        | Commit  |
-| --- | ------------------------------------------- | ------- |
-| -   | SSE GET /v1/events streaming                | c2d93e9 |
-| -   | Prometheus /metrics + Docker packaging      | 5eaa3aa |
-| -   | Task priority queue + per-node stats        | 1fe4f75 |
-| -   | Node JWT authn (all node endpoints guarded) | ad6c5f6 |
-| -   | Redis durable store adapter                 | a6c9798 |
-| -   | Dead Letter Queue + replay                  | c25dd27 |
+| ID    | Task                                        | Commit  |
+| ----- | ------------------------------------------- | ------- |
+| T-001 | Task cancellation endpoint                  | 2ae475a |
+| -     | SSE GET /v1/events streaming                | c2d93e9 |
+| -     | Prometheus /metrics + Docker packaging      | 5eaa3aa |
+| -     | Task priority queue + per-node stats        | 1fe4f75 |
+| -     | Node JWT authn (all node endpoints guarded) | ad6c5f6 |
+| -     | Redis durable store adapter                 | a6c9798 |
+| -     | Dead Letter Queue + replay                  | c25dd27 |

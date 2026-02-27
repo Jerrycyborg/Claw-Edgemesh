@@ -20,22 +20,23 @@
 
 ## Test Suites
 
-| File               | Tests  | Status       |
-| ------------------ | ------ | ------------ |
-| test.ts            | 10     | PASS         |
-| phase2d.test.ts    | 11     | PASS         |
-| dlq.test.ts        | 4      | PASS         |
-| auth.test.ts       | 12     | PASS         |
-| redis.test.ts      | 16     | PASS         |
-| scheduling.test.ts | 7      | PASS         |
-| metrics.test.ts    | 4      | PASS         |
-| sse.test.ts        | 3      | PASS         |
-| **Total**          | **74** | **ALL PASS** |
+| File                 | Tests  | Status       |
+| -------------------- | ------ | ------------ |
+| test.ts              | 10     | PASS         |
+| phase2d.test.ts      | 11     | PASS         |
+| dlq.test.ts          | 4      | PASS         |
+| auth.test.ts         | 12     | PASS         |
+| redis.test.ts        | 16     | PASS         |
+| scheduling.test.ts   | 7      | PASS         |
+| metrics.test.ts      | 4      | PASS         |
+| sse.test.ts          | 3      | PASS         |
+| cancellation.test.ts | 7      | PASS         |
+| **Total**            | **81** | **ALL PASS** |
 
 ## Pipeline State
 
 - **Current phase:** idle (all milestones complete)
-- **Next tasks:** T-001 (cancellation), T-002 (timeouts)
+- **Next tasks:** T-002 (timeouts)
 - **Blocked:** nothing
 
 ## Infrastructure
@@ -45,11 +46,10 @@
 | Local in-memory | WORKING | `npm start`                         |
 | Local Redis     | WORKING | `EDGEMESH_STORE=redis npm start`    |
 | Docker Compose  | READY   | `docker compose up`                 |
-| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ c2d93e9 |
+| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ 2ae475a |
 
 ## Open Tasks
 
 | ID    | Priority | Title                                 | Blocked by |
 | ----- | -------- | ------------------------------------- | ---------- |
-| T-001 | high     | Task cancellation endpoint            | none       |
 | T-002 | high     | Task timeouts (auto-fail stale tasks) | none       |

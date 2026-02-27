@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-02-27 -- Session: Task cancellation T-001 (2ae475a)
+
+**Agent:** claude-sonnet-4-6
+**Phase:** implementation
+**Commits:** 2ae475a
+
+**Work done:**
+
+- Added `"cancelled"` to `Task["status"]` union in `contracts.ts`.
+- Added `cancelTask(taskId): Promise<boolean>` to `ControlPlaneStore` interface.
+- Implemented in `InMemoryControlPlaneStore`: removes from queue if queued, sets status to cancelled. Returns false if already terminal.
+- Implemented in `RedisControlPlaneStore`: same logic, uses `lrem` to remove from queue.
+- Added `POST /v1/tasks/:taskId/cancel` route (admin-token required): 404 if not found, 409 if already terminal, emits `task.cancelled`.
+- Added `"cancelled"` to GET /v1/tasks querystring schema enum.
+- Wrote `src/cancellation.test.ts` (7 tests): queued cancel, not-claimable after cancel, running cancel, 409 for done, 404 unknown, 401 no token, list filter.
+- 81/81 tests pass, build clean.
+
+---
+
 ## 2026-02-27 -- Session: AAHP setup + SSE milestone
 
 **Agent:** claude-sonnet-4-6

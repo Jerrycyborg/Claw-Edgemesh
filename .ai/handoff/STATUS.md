@@ -1,8 +1,7 @@
 <!-- SECTION: summary -->
 
-OpenClaw EdgeMesh control plane is feature-complete across all 6 planned milestones.
-74/74 tests pass, build is clean, all commits pushed to GitHub (Jerrycyborg/Claw-Edgemesh).
-Next work: task cancellation (T-001) and task timeouts (T-002).
+OpenClaw EdgeMesh control plane: all 6 milestones done + T-001 (cancellation) shipped.
+81/81 tests pass, build is clean. Next: T-002 (task timeouts + background reaper).
 
 <!-- /SECTION: summary -->
 
@@ -11,7 +10,7 @@ Next work: task cancellation (T-001) and task timeouts (T-002).
 | Check                 | Status | Notes                |
 | --------------------- | ------ | -------------------- |
 | `npm run build` (tsc) | PASS   | Zero errors          |
-| `npm test` (74 tests) | PASS   | 74/74                |
+| `npm test` (81 tests) | PASS   | 81/81                |
 | ESLint                | PASS   | Runs via lint-staged |
 | Prettier              | PASS   | Runs via lint-staged |
 
@@ -50,7 +49,7 @@ Next work: task cancellation (T-001) and task timeouts (T-002).
 | /v1/tasks/:taskId                      | GET    | none            | DONE                    |
 | /v1/tasks/:taskId/ack                  | POST   | node JWT        | DONE                    |
 | /v1/tasks/:taskId/result               | POST   | node JWT        | DONE                    |
-| /v1/tasks/:taskId/cancel               | POST   | admin-token     | NOT STARTED (T-001)     |
+| /v1/tasks/:taskId/cancel               | POST   | admin-token     | DONE                    |
 | /v1/dlq                                | GET    | none            | DONE                    |
 | /v1/dlq/:taskId                        | GET    | none            | DONE                    |
 | /v1/dlq/:taskId/replay                 | POST   | admin-token     | DONE                    |
@@ -77,7 +76,6 @@ Next work: task cancellation (T-001) and task timeouts (T-002).
 
 | Gap                                                 | Severity | Task   |
 | --------------------------------------------------- | -------- | ------ |
-| No task cancellation API                            | medium   | T-001  |
 | No task timeouts (stale claimed tasks hang forever) | medium   | T-002  |
 | SSE fan-out only within single process              | low      | future |
 

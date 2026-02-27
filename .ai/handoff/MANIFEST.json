@@ -3,57 +3,57 @@
   "project": "openclaw-edgemesh",
   "last_session": {
     "agent": "claude-sonnet-4-6",
-    "session_id": "session-2026-02-27-sse-aahp",
+    "session_id": "session-2026-02-27-cancellation",
     "timestamp": "2026-02-27T00:00:00Z",
-    "commit": "c2d93e9",
+    "commit": "2ae475a",
     "phase": "implementation",
-    "duration_minutes": 60
+    "duration_minutes": 20
   },
   "files": {
     "STATUS.md": {
-      "checksum": "sha256:c09fd5dd3f0abdeb5385ed512dc0547d9ccd0583cde55957b6a26ddc40a24e3c",
+      "checksum": "sha256:629a79384330ffc9635408369394853cb15921b625f90a02d1b575596d10902b",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 72,
-      "summary": "All 6 milestones done. 74/74 tests. Next: T-001 cancellation, T-002 timeouts."
+      "lines": 82,
+      "summary": "All 6 milestones + T-001 done. 81/81 tests. Next: T-002 timeouts."
     },
     "NEXT_ACTIONS.md": {
-      "checksum": "sha256:bc0fb8c80efe0d6cbcf0a3cde5d3bff6a11f6103957e9f68f73be31640134dfc",
+      "checksum": "sha256:bda7cd9789d09b6e7c4a3c66a16bb0b9c641b5c46d0cdf1b047d80080273c1d3",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 103,
-      "summary": "2 tasks ready. T-001: cancel endpoint. T-002: task timeouts + reaper."
+      "lines": 63,
+      "summary": "1 task ready. T-002: task timeoutMs field + background reaper."
     },
     "LOG.md": {
-      "checksum": "sha256:009df7743b0977b0699ce8544cd0f5c751ebc448adea60ede4b443e378f335c0",
+      "checksum": "sha256:e516529c7b319bedae18abb9a16a27dcfe14f9a079f57f3b8479bb865f799b6d",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 78,
-      "summary": "Last entry: SSE streaming + AAHP init. 4 entries covering all milestones."
+      "lines": 102,
+      "summary": "Last entry: T-001 cancellation. 5 entries total."
     },
     "DASHBOARD.md": {
-      "checksum": "sha256:b102176606987e596ece2f9116386a4f45c5eeaa2a4191779d410b1d0db18da0",
+      "checksum": "sha256:ca9255a09d8df7683708648f321bf5905325aab19b7f17566545c96772e1320f",
       "updated": "2026-02-27T00:00:00Z",
       "lines": 55,
-      "summary": "All 8 test suites green. 74/74 total. 2 open tasks (T-001, T-002)."
+      "summary": "9 test suites green. 81/81 total. 1 open task (T-002)."
     },
     "TRUST.md": {
-      "checksum": "sha256:1eb299a88b0e602780288bb9c04c5e8b9a436eafcb30da9aa87cdd364487c7f3",
+      "checksum": "sha256:a772519923bed6c079f60a4c741451b30c767f640fa199a5603bdb85eff813f7",
       "updated": "2026-02-27T00:00:00Z",
       "lines": 31,
       "summary": "Core features verified by tests. Docker and multi-instance SSE not integration-tested."
     },
     "CONVENTIONS.md": {
-      "checksum": "sha256:3f5e5c0ae4a9cdf2b738ef6d5052d3e39156c81d4d78b2ce0e8511e7713ea0b7",
+      "checksum": "sha256:da5e0c54a9860700f99728a925aa6ce1d7120cd1e14fd6d11b5b67ed67264ed4",
       "updated": "2026-02-27T00:00:00Z",
       "lines": 67,
       "summary": "TS strict, MIT-only deps, node:test runner, JWT via built-in crypto, inject for tests."
     },
     "WORKFLOW.md": {
-      "checksum": "sha256:e02331df037e24f72e9f230bc1112170746de9be19a42526f471ba65c270898f",
+      "checksum": "sha256:4029ce35354fe98ab11822d8d43be5fc23c08b0ca3f492aa0d4d538f52912508",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 68,
+      "lines": 69,
       "summary": "contracts -> persistence -> redis-adapter -> route -> tests. AAHP update checklist included."
     }
   },
-  "quick_context": "OpenClaw EdgeMesh control plane is complete across all 6 milestones (DLQ, Redis, JWT, scheduling, metrics/Docker, SSE). 74/74 tests pass, build clean, all pushed to Jerrycyborg/Claw-Edgemesh. Next: implement task cancellation (T-001) then task timeouts with a background reaper (T-002).",
+  "quick_context": "T-001 (cancellation) shipped: POST /v1/tasks/:taskId/cancel, 'cancelled' status in Task union, 7 new tests. 81/81 pass, build clean, pushed to Jerrycyborg/Claw-Edgemesh @ 2ae475a. Only T-002 remains: timeoutMs field on Task + background reaper that auto-fails stale claimed/running tasks.",
   "token_budget": {
     "manifest_only": 80,
     "manifest_plus_core": 350,
@@ -63,10 +63,11 @@
   "tasks": {
     "T-001": {
       "title": "Add POST /v1/tasks/:taskId/cancel endpoint (admin-only)",
-      "status": "ready",
+      "status": "done",
       "priority": "high",
       "depends_on": [],
-      "created": "2026-02-27T00:00:00Z"
+      "created": "2026-02-27T00:00:00Z",
+      "completed": "2026-02-27T00:00:00Z"
     },
     "T-002": {
       "title": "Add task timeouts: timeoutMs field + background reaper",

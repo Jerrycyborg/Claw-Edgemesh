@@ -226,7 +226,7 @@ test("expired claims are re-queued", async () => {
 });
 
 test("freshness state transitions and stale nodes are skipped for claim", async () => {
-  const store = new InMemoryControlPlaneStore({ heartbeatHealthyMs: 10, heartbeatDegradedMs: 25 });
+  const store = new InMemoryControlPlaneStore({ heartbeatHealthyMs: 60, heartbeatDegradedMs: 180 });
   const app = buildControlPlane(store);
   await app.ready();
 
@@ -287,7 +287,7 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
     requiredTags: ["linux"],
   });
 
-  await new Promise((r) => setTimeout(r, 14));
+  await new Promise((r) => setTimeout(r, 80));
   const nodesDegraded = await app.inject({ method: "GET", url: "/v1/nodes" });
   assert.equal(nodesDegraded.json().nodes[0].freshnessState, "degraded");
 
@@ -298,7 +298,7 @@ test("freshness state transitions and stale nodes are skipped for claim", async 
   });
   assert.equal(claimDegraded.json().task, null);
 
-  await new Promise((r) => setTimeout(r, 14));
+  await new Promise((r) => setTimeout(r, 120));
   const nodesOffline = await app.inject({ method: "GET", url: "/v1/nodes" });
   assert.equal(nodesOffline.json().nodes[0].freshnessState, "offline");
 

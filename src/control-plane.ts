@@ -216,6 +216,28 @@ export function buildControlPlane(
     return { ok: true };
   });
 
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/drain", async (req, reply) => {
+    const adminToken = req.headers["x-admin-token"];
+    if (adminToken !== adminSecret)
+      return reply.code(401).send({ ok: false, error: "unauthorized" });
+    const node = await store.getNode(req.params.nodeId);
+    if (!node) return reply.code(404).send({ ok: false, error: "node_not_found" });
+    await store.setNodeDrain(req.params.nodeId, true);
+    ctx.emit({ type: "node.drain", at: Date.now(), nodeId: req.params.nodeId });
+    return { ok: true };
+  });
+
+  app.post<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/undrain", async (req, reply) => {
+    const adminToken = req.headers["x-admin-token"];
+    if (adminToken !== adminSecret)
+      return reply.code(401).send({ ok: false, error: "unauthorized" });
+    const node = await store.getNode(req.params.nodeId);
+    if (!node) return reply.code(404).send({ ok: false, error: "node_not_found" });
+    await store.setNodeDrain(req.params.nodeId, false);
+    ctx.emit({ type: "node.undrain", at: Date.now(), nodeId: req.params.nodeId });
+    return { ok: true };
+  });
+
   app.get("/v1/nodes", async () => ({ nodes: await store.listNodes() }));
 
   app.get<{ Params: { nodeId: string } }>("/v1/nodes/:nodeId/stats", async (req, reply) => {

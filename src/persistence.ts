@@ -12,6 +12,7 @@ type NodeRecord = RegisterNodeRequest & {
   lastHeartbeat?: HeartbeatRequest;
   trusted?: boolean;
   revoked?: boolean;
+  draining?: boolean;
 };
 
 export interface ControlPlaneStore {
@@ -20,6 +21,7 @@ export interface ControlPlaneStore {
   listNodes(): Promise<NodeView[]>;
   setHeartbeat(nodeId: string, heartbeat: HeartbeatRequest): Promise<boolean>;
   setNodeTrust(nodeId: string, trust: { trusted?: boolean; revoked?: boolean }): Promise<boolean>;
+  setNodeDrain(nodeId: string, draining: boolean): Promise<boolean>;
 
   enqueueTask(task: Task): Promise<void>;
   claimTask(nodeId: string): Promise<Task | null>;
@@ -94,6 +96,14 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
+  async setNodeDrain(nodeId: string, draining: boolean): Promise<boolean> {
+    const node = this.nodes.get(nodeId);
+    if (!node) return false;
+    node.draining = draining;
+    this.nodes.set(nodeId, node);
+    return true;
+  }
+
   async enqueueTask(task: Task): Promise<void> {
     this.tasks.set(task.taskId, task);
     this.taskQueue.push(task.taskId);
@@ -105,6 +115,7 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
     const node = this.nodes.get(nodeId);
     if (!node) return null;
     if (node.revoked || !node.trusted) return null;
+    if (node.draining) return null;
     if (this.getFreshnessState(node) !== "healthy") return null;
 
     const activeOnNode = this.countActiveTasksForNode(nodeId);
@@ -263,6 +274,7 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
       freshnessState: this.getFreshnessState(node),
       trusted: node.trusted ?? false,
       revoked: node.revoked ?? false,
+      draining: node.draining ?? false,
     };
   }
 

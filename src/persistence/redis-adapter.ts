@@ -14,6 +14,7 @@ type NodeRecord = RegisterNodeRequest & {
   lastHeartbeat?: HeartbeatRequest;
   trusted?: boolean;
   revoked?: boolean;
+  draining?: boolean;
 };
 
 export class RedisControlPlaneStore implements ControlPlaneStore {
@@ -77,6 +78,14 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
     return true;
   }
 
+  async setNodeDrain(nodeId: string, draining: boolean): Promise<boolean> {
+    const record = await this.getNodeRecord(nodeId);
+    if (!record) return false;
+    record.draining = draining;
+    await this.redis.set(`node:${nodeId}`, JSON.stringify(record));
+    return true;
+  }
+
   // ── Tasks ─────────────────────────────────────────────────────────────────
 
   async enqueueTask(task: Task): Promise<void> {
@@ -91,6 +100,7 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
     const node = await this.getNodeRecord(nodeId);
     if (!node) return null;
     if (node.revoked || !node.trusted) return null;
+    if (node.draining) return null;
     if (this.getFreshnessState(node) !== "healthy") return null;
 
     const active = await this.countActiveTasksForNode(nodeId);
@@ -325,6 +335,7 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
       freshnessState: this.getFreshnessState(node),
       trusted: node.trusted ?? false,
       revoked: node.revoked ?? false,
+      draining: node.draining ?? false,
     };
   }
 }

@@ -28,6 +28,7 @@ export interface NodeView extends RegisterNodeRequest {
   freshnessState: NodeFreshnessState;
   trusted?: boolean;
   revoked?: boolean;
+  draining?: boolean;
 }
 
 export interface Task {

@@ -160,6 +160,20 @@ export class RedisControlPlaneStore implements ControlPlaneStore {
     return status ? tasks.filter((t) => t.status === status) : tasks;
   }
 
+  async cancelTask(taskId: string): Promise<boolean> {
+    const raw = await this.redis.get(`task:${taskId}`);
+    if (!raw) return false;
+    const task = JSON.parse(raw) as Task;
+    if (task.status === "done" || task.status === "failed" || task.status === "cancelled")
+      return false;
+
+    task.status = "cancelled";
+    task.claimedAt = undefined;
+    await this.redis.set(`task:${taskId}`, JSON.stringify(task));
+    await this.redis.lrem("taskqueue", 1, taskId);
+    return true;
+  }
+
   async requeueForRetry(taskId: string, retryAfter: number): Promise<boolean> {
     const raw = await this.redis.get(`task:${taskId}`);
     if (!raw) return false;

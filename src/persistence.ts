@@ -29,6 +29,7 @@ export interface ControlPlaneStore {
   listRunningTasks(): Promise<Task[]>;
   listTasks(status?: Task["status"]): Promise<Task[]>;
 
+  cancelTask(taskId: string): Promise<boolean>;
   requeueForRetry(taskId: string, retryAfter: number): Promise<boolean>;
 
   setTaskResult(result: TaskResult): Promise<void>;
@@ -173,6 +174,21 @@ export class InMemoryControlPlaneStore implements ControlPlaneStore {
   async listTasks(status?: Task["status"]): Promise<Task[]> {
     if (!status) return [...this.tasks.values()];
     return [...this.tasks.values()].filter((task) => task.status === status);
+  }
+
+  async cancelTask(taskId: string): Promise<boolean> {
+    const task = this.tasks.get(taskId);
+    if (!task) return false;
+    if (task.status === "done" || task.status === "failed" || task.status === "cancelled")
+      return false;
+
+    const idx = this.taskQueue.indexOf(taskId);
+    if (idx >= 0) this.taskQueue.splice(idx, 1);
+
+    task.status = "cancelled";
+    task.claimedAt = undefined;
+    this.tasks.set(taskId, task);
+    return true;
   }
 
   async requeueForRetry(taskId: string, retryAfter: number): Promise<boolean> {

@@ -466,6 +466,24 @@ export function buildControlPlane(
     }
   );
 
+  app.post<{ Params: { taskId: string } }>("/v1/tasks/:taskId/cancel", async (req, reply) => {
+    const adminToken = req.headers["x-admin-token"];
+    if (adminToken !== adminSecret)
+      return reply.code(401).send({ ok: false, error: "unauthorized" });
+
+    const task = await store.getTask(req.params.taskId);
+    if (!task) return reply.code(404).send({ ok: false, error: "task_not_found" });
+
+    if (task.status === "done" || task.status === "failed" || task.status === "cancelled")
+      return reply
+        .code(409)
+        .send({ ok: false, error: "task_already_terminal", status: task.status });
+
+    await store.cancelTask(req.params.taskId);
+    ctx.emit({ type: "task.cancelled", at: Date.now(), taskId: req.params.taskId });
+    return { ok: true };
+  });
+
   // ── Queries ───────────────────────────────────────────────────────────────
 
   app.get<{ Querystring: { status?: Task["status"] } }>(
@@ -475,7 +493,10 @@ export function buildControlPlane(
         querystring: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["queued", "claimed", "running", "done", "failed"] },
+            status: {
+              type: "string",
+              enum: ["queued", "claimed", "running", "done", "failed", "cancelled"],
+            },
           },
         },
       },

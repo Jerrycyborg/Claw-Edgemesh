@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-02-27 -- Session: Node drain T-003 (95f929c)
+
+**Agent:** claude-sonnet-4-6
+**Phase:** implementation
+**Commits:** 95f929c
+
+**Work done:**
+
+- Added `draining?: boolean` to `NodeView` in `contracts.ts`.
+- Added `setNodeDrain(nodeId, draining): Promise<boolean>` to `ControlPlaneStore` interface.
+- Implemented in `InMemoryControlPlaneStore`: sets `node.draining`, guards `claimTask` (returns null if draining), exposed in `toNodeView`.
+- Implemented in `RedisControlPlaneStore`: same pattern.
+- Added `POST /v1/nodes/:nodeId/drain` (admin-only) — sets draining=true, emits `node.drain`.
+- Added `POST /v1/nodes/:nodeId/undrain` (admin-only) — sets draining=false, emits `node.undrain`.
+- Wrote `src/drain.test.ts` (5 tests): blocks claim, NodeView reflects state, undrain restores eligibility, 404 unknown, 401 no token.
+- Fixed pre-existing timing flake in test.ts test 83: widened heartbeat windows from 10ms/25ms to 60ms/180ms, waits from 14ms to 80ms/120ms.
+- 89/89 tests pass, build clean.
+
+---
+
 ## 2026-02-27 -- Session: Task timeouts T-002 (94021ae)
 
 **Agent:** claude-sonnet-4-6

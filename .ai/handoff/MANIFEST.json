@@ -3,36 +3,36 @@
   "project": "openclaw-edgemesh",
   "last_session": {
     "agent": "claude-sonnet-4-6",
-    "session_id": "session-2026-02-27-timeouts",
+    "session_id": "session-2026-02-27-drain",
     "timestamp": "2026-02-27T00:00:00Z",
-    "commit": "94021ae",
+    "commit": "95f929c",
     "phase": "implementation",
     "duration_minutes": 15
   },
   "files": {
     "STATUS.md": {
-      "checksum": "sha256:066b3e69985446a48357f908360754360aee5d8bb596c96146e6c2a48142a092",
+      "checksum": "sha256:545bdbfde14c881a34d5493d9c03a44cacda821af12c009dfc99966a94dca170",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 82,
-      "summary": "All tasks done. 84/84 tests. No open gaps."
+      "lines": 83,
+      "summary": "All tasks done. 89/89 tests. drain/undrain endpoints added."
     },
     "NEXT_ACTIONS.md": {
-      "checksum": "sha256:a88f09551a219d4df1360e805355b08da35fb2220815bb5f188ce692e09f874b",
+      "checksum": "sha256:8e3c35d13f95c9b396ad7c88cd44d65a069554a5a25c8ba953caf3ec1c3e648e",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 22,
-      "summary": "No open tasks. Recently completed: T-002, T-001, SSE, metrics, scheduling, JWT, Redis, DLQ."
+      "lines": 23,
+      "summary": "No open tasks. Recently completed: T-003 drain, T-002, T-001, SSE, metrics, scheduling, JWT, Redis, DLQ."
     },
     "LOG.md": {
-      "checksum": "sha256:323b5685256e4cdf8ece536b5246810ad308d5aef8430a4dc2787b7a0fd68138",
+      "checksum": "sha256:ce8cd9c238ebb080cd3192201dfdc8b6656479037f2fe1108f14833b4ef2dda3",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 120,
-      "summary": "Last entry: T-002 timeouts. 6 entries total."
+      "lines": 140,
+      "summary": "Last entry: T-003 node drain. 7 entries total."
     },
     "DASHBOARD.md": {
-      "checksum": "sha256:29bf986bf7f0fb8ce329dad277941efbe33420113587415a30a1258af1fe5eb8",
+      "checksum": "sha256:b24c62135e8e6b51f0490d93c035b559547ab660105f3b33f4ba65d414ad890a",
       "updated": "2026-02-27T00:00:00Z",
-      "lines": 54,
-      "summary": "10 test suites green. 84/84 total. No open tasks."
+      "lines": 55,
+      "summary": "11 test suites green. 89/89 total. No open tasks."
     },
     "TRUST.md": {
       "checksum": "sha256:a772519923bed6c079f60a4c741451b30c767f640fa199a5603bdb85eff813f7",
@@ -53,13 +53,13 @@
       "summary": "contracts -> persistence -> redis-adapter -> route -> tests. AAHP update checklist included."
     }
   },
-  "quick_context": "All planned tasks complete. 84/84 tests pass, build clean, pushed to Jerrycyborg/Claw-Edgemesh @ 94021ae. Features: DLQ, Redis, JWT, scheduling, Prometheus/Docker, SSE, task cancellation, task timeouts with reaper. Ready for new tasks.",
+  "quick_context": "All planned tasks complete. 89/89 tests pass, build clean, pushed to Jerrycyborg/Claw-Edgemesh @ 95f929c. Features: DLQ, Redis, JWT, scheduling, Prometheus/Docker, SSE, task cancellation, task timeouts with reaper, node drain/undrain. Ready for new tasks.",
   "token_budget": {
     "manifest_only": 80,
     "manifest_plus_core": 350,
     "full_read": 2800
   },
-  "next_task_id": 3,
+  "next_task_id": 4,
   "tasks": {
     "T-001": {
       "title": "Add POST /v1/tasks/:taskId/cancel endpoint (admin-only)",
@@ -71,6 +71,14 @@
     },
     "T-002": {
       "title": "Add task timeouts: timeoutMs field + background reaper",
+      "status": "done",
+      "priority": "high",
+      "depends_on": [],
+      "created": "2026-02-27T00:00:00Z",
+      "completed": "2026-02-27T00:00:00Z"
+    },
+    "T-003": {
+      "title": "Node drain/undrain: POST /v1/nodes/:nodeId/drain + undrain",
       "status": "done",
       "priority": "high",
       "depends_on": [],

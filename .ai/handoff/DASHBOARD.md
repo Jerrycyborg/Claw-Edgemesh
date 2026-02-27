@@ -4,7 +4,7 @@
 
 | Component        | Build | Tests                        | Notes                      |
 | ---------------- | ----- | ---------------------------- | -------------------------- |
-| control-plane    | PASS  | 74/74                        | All endpoints implemented  |
+| control-plane    | PASS  | covered                      | All endpoints implemented  |
 | in-memory store  | PASS  | covered                      | Default, zero config       |
 | redis-adapter    | PASS  | 16 tests (redis.test.ts)     | ioredis + ioredis-mock     |
 | security (JWT)   | PASS  | 12 tests (auth.test.ts)      | HS256, built-in crypto     |
@@ -32,7 +32,8 @@
 | sse.test.ts          | 3      | PASS         |
 | cancellation.test.ts | 7      | PASS         |
 | timeout.test.ts      | 3      | PASS         |
-| **Total**            | **84** | **ALL PASS** |
+| drain.test.ts        | 5      | PASS         |
+| **Total**            | **89** | **ALL PASS** |
 
 ## Pipeline State
 
@@ -47,7 +48,7 @@
 | Local in-memory | WORKING | `npm start`                         |
 | Local Redis     | WORKING | `EDGEMESH_STORE=redis npm start`    |
 | Docker Compose  | READY   | `docker compose up`                 |
-| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ 94021ae |
+| GitHub          | SYNCED  | Jerrycyborg/Claw-Edgemesh @ 95f929c |
 
 ## Open Tasks
 

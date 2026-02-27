@@ -12,6 +12,7 @@ No open tasks. All planned work is complete. Propose new tasks to the user if ne
 
 | ID    | Task                                        | Commit  |
 | ----- | ------------------------------------------- | ------- |
+| T-003 | Node drain/undrain endpoints                | 95f929c |
 | T-002 | Task timeouts + background reaper           | 94021ae |
 | T-001 | Task cancellation endpoint                  | 2ae475a |
 | -     | SSE GET /v1/events streaming                | c2d93e9 |

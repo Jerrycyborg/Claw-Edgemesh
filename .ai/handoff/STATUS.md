@@ -1,7 +1,7 @@
 <!-- SECTION: summary -->
 
-OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
-84/84 tests pass, build is clean. No open tasks.
+OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 + T-003 shipped.
+89/89 tests pass, build is clean. No open tasks.
 
 <!-- /SECTION: summary -->
 
@@ -10,7 +10,7 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
 | Check                 | Status | Notes                |
 | --------------------- | ------ | -------------------- |
 | `npm run build` (tsc) | PASS   | Zero errors          |
-| `npm test` (84 tests) | PASS   | 84/84                |
+| `npm test` (89 tests) | PASS   | 89/89                |
 | ESLint                | PASS   | Runs via lint-staged |
 | Prettier              | PASS   | Runs via lint-staged |
 
@@ -39,6 +39,8 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
 | /v1/nodes/register                     | POST   | bootstrap-token | DONE                    |
 | /v1/nodes/refresh-token                | POST   | node JWT        | DONE                    |
 | /v1/nodes/:nodeId/revoke               | POST   | admin-token     | DONE                    |
+| /v1/nodes/:nodeId/drain                | POST   | admin-token     | DONE                    |
+| /v1/nodes/:nodeId/undrain              | POST   | admin-token     | DONE                    |
 | /v1/nodes/:nodeId/heartbeat            | POST   | node JWT        | DONE                    |
 | /v1/nodes/:nodeId/tasks/claim          | POST   | node JWT        | DONE                    |
 | /v1/nodes/:nodeId/stats                | GET    | none            | DONE                    |
@@ -68,7 +70,7 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 shipped.
 | Local (in-memory) | WORKING | Default, zero config                             |
 | Local (Redis)     | WORKING | EDGEMESH_STORE=redis + EDGEMESH_REDIS_URL        |
 | Docker Compose    | READY   | docker-compose.yml ships control-plane + Redis 7 |
-| GitHub            | PUSHED  | Jerrycyborg/Claw-Edgemesh, main branch           |
+| GitHub            | PUSHED  | Jerrycyborg/Claw-Edgemesh @ 95f929c              |
 
 <!-- /SECTION: infra -->
 

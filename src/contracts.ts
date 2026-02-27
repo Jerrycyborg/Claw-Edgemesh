@@ -40,6 +40,8 @@ export interface Task {
   maxAttempts?: number;
   /** Higher number = higher urgency. Default 0. Tiebreak is FIFO (createdAt asc). */
   priority?: number;
+  /** Auto-fail after this many ms since claimedAt if no result is received. */
+  timeoutMs?: number;
   status: "queued" | "claimed" | "running" | "done" | "failed" | "cancelled";
   createdAt: number;
   claimedAt?: number;

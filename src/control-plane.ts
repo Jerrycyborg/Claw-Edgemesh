@@ -13,6 +13,7 @@ import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
 import { createTelemetryPlugin, type TelemetryPlugin } from "./plugins/telemetry-plugin.js";
 import { JobTokenManager, NodeJwtManager, NodeTrustManager } from "./security.js";
 import { computeRetryDecision } from "./control/retry-policy.js";
+import { startTimeoutReaper } from "./control/timeout-reaper.js";
 
 const SCHEMA_VERSION = "1.0" as const;
 
@@ -38,7 +39,11 @@ function extractNodeJwt(
 
 export function buildControlPlane(
   store: ControlPlaneStore = createStore(),
-  options: { plugins?: EdgeMeshPlugin[]; nodeJwtManager?: NodeJwtManager } = {}
+  options: {
+    plugins?: EdgeMeshPlugin[];
+    nodeJwtManager?: NodeJwtManager;
+    reaperIntervalMs?: number;
+  } = {}
 ): FastifyInstance {
   const app = Fastify({ logger: true });
 
@@ -321,6 +326,7 @@ export function buildControlPlane(
             requiredTags: { type: "array", items: { type: "string" } },
             maxAttempts: { type: "integer", minimum: 1, maximum: 10 },
             priority: { type: "integer", minimum: 0, maximum: 100 },
+            timeoutMs: { type: "integer", minimum: 100, maximum: 300_000 },
           },
         },
       },
@@ -591,6 +597,10 @@ export function buildControlPlane(
     ctx.emit({ type: "task.enqueued", at: Date.now(), taskId: req.params.taskId });
     return { ok: true, taskId: req.params.taskId };
   });
+
+  // Start timeout reaper; clear it on shutdown so tests don't leak open handles.
+  const reaperHandle = startTimeoutReaper(store, ctx, options.reaperIntervalMs ?? 5_000);
+  app.addHook("onClose", async () => clearInterval(reaperHandle));
 
   return app;
 }

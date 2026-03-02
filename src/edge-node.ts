@@ -7,6 +7,7 @@ const nodeId = process.env.EDGEMESH_NODE_ID ?? `node-${Math.random().toString(36
 const bootstrapToken = process.env.EDGEMESH_BOOTSTRAP_TOKEN ?? "bootstrap-dev";
 const heartbeatMs = Number(process.env.EDGEMESH_HEARTBEAT_MS ?? 3000);
 const pollMs = Number(process.env.EDGEMESH_POLL_MS ?? 1500);
+const MAX_BACKOFF_MS = Number(process.env.EDGEMESH_MAX_BACKOFF_MS ?? 30_000);
 
 let nodeJwt: string | null = null;
 
@@ -156,6 +157,10 @@ async function main() {
     });
   }, heartbeatMs);
 
+  // Exponential backoff state for error handling
+  let backoffMs = pollMs;
+  let consecutiveErrors = 0;
+
   while (true) {
     try {
       const task = await claimTask();
@@ -168,14 +173,29 @@ async function main() {
       const result = await executeTask(task);
       await submitResult(result);
       console.log(`[edge-node:${nodeId}] task completed`, task.taskId, result.ok ? "ok" : "failed");
+      
+      // Reset backoff on successful task execution
+      backoffMs = pollMs;
+      consecutiveErrors = 0;
     } catch (err) {
+      consecutiveErrors++;
+      
       if (String(err).includes("HTTP 401")) {
         console.warn(`[edge-node:${nodeId}] 401 on task loop, re-authenticating`);
         await reAuth().catch((e) => console.error(`[edge-node:${nodeId}] re-auth failed`, e));
       } else {
-        console.error(`[edge-node:${nodeId}] loop error`, err);
+        console.error(`[edge-node:${nodeId}] loop error (attempt ${consecutiveErrors})`, err);
       }
-      await sleep(pollMs);
+      
+      // Exponential backoff with jitter to prevent thundering herd
+      const jitter = Math.random() * 1000; // 0-1000ms jitter
+      const nextBackoff = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+      const sleepTime = Math.min(backoffMs + jitter, MAX_BACKOFF_MS);
+      
+      console.log(`[edge-node:${nodeId}] backing off for ${Math.round(sleepTime)}ms`);
+      await sleep(sleepTime);
+      
+      backoffMs = nextBackoff;
     }
   }
 }

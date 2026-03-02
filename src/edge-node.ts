@@ -146,7 +146,20 @@ async function submitResult(result: TaskResult) {
 async function main() {
   await registerNode();
 
-  setInterval(() => {
+  let isShuttingDown = false;
+
+  // Graceful shutdown handlers
+  process.on("SIGTERM", () => {
+    console.log(`[edge-node:${nodeId}] received SIGTERM, shutting down gracefully`);
+    isShuttingDown = true;
+  });
+
+  process.on("SIGINT", () => {
+    console.log(`[edge-node:${nodeId}] received SIGINT, shutting down gracefully`);
+    isShuttingDown = true;
+  });
+
+  const heartbeatInterval = setInterval(() => {
     sendHeartbeat().catch((err) => {
       if (String(err).includes("HTTP 401")) {
         reAuth().catch((e) => console.error(`[edge-node:${nodeId}] re-auth failed`, e));
@@ -156,13 +169,19 @@ async function main() {
     });
   }, heartbeatMs);
 
-  while (true) {
+  let backoffMs = pollMs;
+  const MAX_BACKOFF_MS = 30_000;
+
+  while (!isShuttingDown) {
     try {
       const task = await claimTask();
       if (!task) {
         await sleep(pollMs);
         continue;
       }
+
+      // Reset backoff on successful claim
+      backoffMs = pollMs;
 
       await ackTask(task.taskId);
       const result = await executeTask(task);
@@ -175,9 +194,17 @@ async function main() {
       } else {
         console.error(`[edge-node:${nodeId}] loop error`, err);
       }
-      await sleep(pollMs);
+      // Exponential backoff with jitter to prevent thundering herd
+      const jitter = Math.random() * 1000;
+      const sleepTime = Math.min(backoffMs + jitter, MAX_BACKOFF_MS);
+      await sleep(sleepTime);
+      backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
     }
   }
+
+  // Cleanup on shutdown
+  clearInterval(heartbeatInterval);
+  console.log(`[edge-node:${nodeId}] shutdown complete`);
 }
 
 main().catch((err) => {

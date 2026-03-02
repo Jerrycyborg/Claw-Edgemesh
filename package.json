@@ -21,6 +21,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
     "fastify": "^5.0.0",
     "ioredis": "^5.9.3"
   },

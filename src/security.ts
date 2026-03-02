@@ -21,7 +21,11 @@ export class JobTokenManager {
   private usedJtiExp = new Map<string, number>();
 
   constructor(secret?: string) {
-    this.secret = secret ?? process.env.EDGEMESH_JOB_TOKEN_SECRET ?? "dev-secret";
+    const envSecret = process.env.EDGEMESH_JOB_TOKEN_SECRET;
+    if (!secret && !envSecret && process.env.NODE_ENV === "production") {
+      throw new Error("EDGEMESH_JOB_TOKEN_SECRET must be set in production");
+    }
+    this.secret = secret ?? envSecret ?? "dev-secret";
   }
 
   issue(input: Omit<JobTokenPayload, "jti">) {
@@ -90,7 +94,11 @@ export class NodeJwtManager {
   private readonly ttlMs: number;
 
   constructor(secret?: string, ttlMs?: number) {
-    this.secret = secret ?? process.env.EDGEMESH_NODE_JWT_SECRET ?? "node-jwt-dev";
+    const envSecret = process.env.EDGEMESH_NODE_JWT_SECRET;
+    if (!secret && !envSecret && process.env.NODE_ENV === "production") {
+      throw new Error("EDGEMESH_NODE_JWT_SECRET must be set in production");
+    }
+    this.secret = secret ?? envSecret ?? "node-jwt-dev";
     this.ttlMs = ttlMs ?? 24 * 60 * 60 * 1000; // 24 h default
   }
 
@@ -140,7 +148,11 @@ export class NodeTrustManager {
   private bootstrapSecret: string;
 
   constructor(secret?: string) {
-    this.bootstrapSecret = secret ?? process.env.EDGEMESH_BOOTSTRAP_SECRET ?? "bootstrap-dev";
+    const envSecret = process.env.EDGEMESH_BOOTSTRAP_SECRET;
+    if (!secret && !envSecret && process.env.NODE_ENV === "production") {
+      throw new Error("EDGEMESH_BOOTSTRAP_SECRET must be set in production");
+    }
+    this.bootstrapSecret = secret ?? envSecret ?? "bootstrap-dev";
   }
 
   verifyBootstrapToken(token?: string): boolean {

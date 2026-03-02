@@ -1,5 +1,6 @@
 import { PassThrough } from "node:stream";
 import Fastify from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type {
   DlqEntry,
@@ -47,10 +48,22 @@ export function buildControlPlane(
 ): FastifyInstance {
   const app = Fastify({ logger: true });
 
+  // Rate limiting: protect against DoS attacks
+  app.register(rateLimit, {
+    global: true,
+    max: 100,
+    timeWindow: "1 minute",
+    skipOnError: true, // Don't block requests if rate limiter fails
+  });
+
   const tokenManager = new JobTokenManager();
   const trustManager = new NodeTrustManager();
   const nodeJwtManager = options.nodeJwtManager ?? new NodeJwtManager();
-  const adminSecret = process.env.EDGEMESH_ADMIN_SECRET ?? "admin-dev";
+  const envAdminSecret = process.env.EDGEMESH_ADMIN_SECRET;
+  if (!envAdminSecret && process.env.NODE_ENV === "production") {
+    throw new Error("EDGEMESH_ADMIN_SECRET must be set in production");
+  }
+  const adminSecret = envAdminSecret ?? "admin-dev";
 
   const events: EdgeMeshEvent[] = [];
   const ctx = {

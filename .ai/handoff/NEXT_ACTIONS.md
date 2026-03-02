@@ -6,15 +6,16 @@ Priority order: top to bottom. Each task is self-contained -- start without aski
 
 ## Phase 3: Production Readiness & Scaling (v0.2-alpha → v0.3)
 
-| ID    | Task                                                    | Priority | Est   |
-| ----- | ------------------------------------------------------- | -------- | ----- |
-| T-004 | Implement Redis atomic task claiming (Lua script)       | HIGH     | 1 day |
-| T-005 | Add soak test framework (2-3 nodes, 100+ tasks)         | HIGH     | 1 day |
-| T-006 | Multi-instance control-plane load balancing tests       | MEDIUM   | 1 day |
-| T-007 | Add Grafana dashboard templates for /metrics            | MEDIUM   | 1 day |
-| T-008 | Kubernetes deployment manifests + Helm chart            | MEDIUM   | 2 day |
-| T-009 | Add comprehensive E2E test suite                        | MEDIUM   | 1 day |
-| T-010 | Performance benchmarks (task throughput, claim latency) | LOW      | 1 day |
+| ID    | Task                                                    | Priority | Status      | Notes                                          |
+| ----- | ------------------------------------------------------- | -------- | ----------- | ---------------------------------------------- |
+| T-004 | Investigate test flakiness                              | HIGH     | NOT_STARTED | Loop tests fail, single runs pass              |
+| T-005 | Complete Redis atomic task claiming (Redlock)           | HIGH     | IN_PROGRESS | Basic impl works; needs Redlock for multi-inst |
+| T-006 | Add soak test framework (2-3 nodes, 100+ tasks)         | HIGH     | NOT_STARTED |                                                |
+| T-007 | Multi-instance control-plane load balancing tests       | MEDIUM   | NOT_STARTED | Depends on T-005 completion                    |
+| T-008 | Add Grafana dashboard templates for /metrics            | MEDIUM   | NOT_STARTED |                                                |
+| T-009 | Kubernetes deployment manifests + Helm chart            | MEDIUM   | NOT_STARTED |                                                |
+| T-010 | Add comprehensive E2E test suite                        | MEDIUM   | NOT_STARTED |                                                |
+| T-011 | Performance benchmarks (task throughput, claim latency) | LOW      | NOT_STARTED |                                                |
 
 ---
 

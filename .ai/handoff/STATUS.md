@@ -1,7 +1,8 @@
 <!-- SECTION: summary -->
 
 OpenClaw EdgeMesh control plane: all 6 milestones + T-001/002/003 + production hardening shipped.
-89/89 tests pass, build is clean. Ready for v0.2-alpha stabilization.
+89/89 tests pass in single runs. Test flakiness detected in loop runs (T-004 to investigate).
+Ready for v0.2-alpha stabilization, moving to Phase 3 production hardening.
 
 <!-- /SECTION: summary -->
 
@@ -80,7 +81,8 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001/002/003 + production h
 
 | Gap                                    | Severity | Task                |
 | -------------------------------------- | -------- | ------------------- |
+| Test flakiness (loop vs single runs)   | medium   | T-004 (investigate) |
 | SSE fan-out only within single process | low      | future              |
-| Redis claimTask race condition         | medium   | Issue #2 (deferred) |
+| Redis multi-instance atomicity         | medium   | T-005 (Redlock)     |
 
 <!-- /SECTION: gaps -->

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { requireSecretInProduction } from "./utils/secrets.js";
 
 export type JobTokenPayload = {
   jobId: string;
@@ -21,7 +22,11 @@ export class JobTokenManager {
   private usedJtiExp = new Map<string, number>();
 
   constructor(secret?: string) {
-    this.secret = secret ?? process.env.EDGEMESH_JOB_TOKEN_SECRET ?? "dev-secret";
+    this.secret = requireSecretInProduction(
+      "EDGEMESH_JOB_TOKEN_SECRET",
+      secret ?? process.env.EDGEMESH_JOB_TOKEN_SECRET,
+      "dev-secret"
+    );
   }
 
   issue(input: Omit<JobTokenPayload, "jti">) {
@@ -90,7 +95,11 @@ export class NodeJwtManager {
   private readonly ttlMs: number;
 
   constructor(secret?: string, ttlMs?: number) {
-    this.secret = secret ?? process.env.EDGEMESH_NODE_JWT_SECRET ?? "node-jwt-dev";
+    this.secret = requireSecretInProduction(
+      "EDGEMESH_NODE_JWT_SECRET",
+      secret ?? process.env.EDGEMESH_NODE_JWT_SECRET,
+      "node-jwt-dev"
+    );
     this.ttlMs = ttlMs ?? 24 * 60 * 60 * 1000; // 24 h default
   }
 
@@ -140,7 +149,11 @@ export class NodeTrustManager {
   private bootstrapSecret: string;
 
   constructor(secret?: string) {
-    this.bootstrapSecret = secret ?? process.env.EDGEMESH_BOOTSTRAP_SECRET ?? "bootstrap-dev";
+    this.bootstrapSecret = requireSecretInProduction(
+      "EDGEMESH_BOOTSTRAP_SECRET",
+      secret ?? process.env.EDGEMESH_BOOTSTRAP_SECRET,
+      "bootstrap-dev"
+    );
   }
 
   verifyBootstrapToken(token?: string): boolean {

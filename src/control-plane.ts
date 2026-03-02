@@ -12,6 +12,7 @@ import { InMemoryControlPlaneStore, type ControlPlaneStore } from "./persistence
 import type { EdgeMeshEvent, EdgeMeshPlugin } from "./plugins/types.js";
 import { createTelemetryPlugin, type TelemetryPlugin } from "./plugins/telemetry-plugin.js";
 import { JobTokenManager, NodeJwtManager, NodeTrustManager } from "./security.js";
+import { requireSecretInProduction } from "./utils/secrets.js";
 import { computeRetryDecision } from "./control/retry-policy.js";
 import { startTimeoutReaper } from "./control/timeout-reaper.js";
 
@@ -50,7 +51,7 @@ export function buildControlPlane(
   const tokenManager = new JobTokenManager();
   const trustManager = new NodeTrustManager();
   const nodeJwtManager = options.nodeJwtManager ?? new NodeJwtManager();
-  const adminSecret = process.env.EDGEMESH_ADMIN_SECRET ?? "admin-dev";
+  const adminSecret = requireSecretInProduction("EDGEMESH_ADMIN_SECRET", process.env.EDGEMESH_ADMIN_SECRET, "admin-dev");
 
   const events: EdgeMeshEvent[] = [];
   const ctx = {

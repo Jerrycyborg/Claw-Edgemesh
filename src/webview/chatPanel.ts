@@ -109,11 +109,18 @@ export class ChatPanel {
       return;
     }
 
-    const apiKey = await this._context.secrets.get(`${SECRET_KEY_PREFIX}${provider}`);
+    // Resolve API key: SecretStorage first, then Codespaces env vars as fallback
+    const envKeyMap: Record<string, string> = {
+      openai: 'OPENAI_API_KEY',
+      anthropic: 'ANTHROPIC_API_KEY',
+      google: 'GOOGLE_API_KEY',
+    };
+    const storedKey = await this._context.secrets.get(`${SECRET_KEY_PREFIX}${provider}`);
+    const apiKey = storedKey || process.env[envKeyMap[provider] ?? ''];
     if (!apiKey) {
       this._panel.webview.postMessage({
         command: 'error',
-        text: `No API key set for ${provider}. Use "VibeCode: Set API Key" command or click the key icon.`,
+        text: `No API key for ${provider}. Use "VibeCode: Set API Key", or set the ${envKeyMap[provider]} Codespaces secret.`,
       });
       return;
     }
@@ -556,11 +563,14 @@ export class ChatPanel {
     }
 
     function formatText(text) {
-      // Simple code block formatting
+      // Use hex \x60 for backtick to avoid breaking the outer TS template literal
+      var bt = '\x60';
+      var bt3Re = new RegExp(bt + bt + bt + '([\\s\\S]*?)' + bt + bt + bt, 'g');
+      var bt1Re = new RegExp(bt + '([^' + bt + ']+)' + bt, 'g');
       return text
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\`\`\`([\s\S]*?)\`\`\`/g, '<pre><code>$1</code></pre>')
-        .replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+        .replace(bt3Re, '<pre><code>$1</code></pre>')
+        .replace(bt1Re, '<code>$1</code>');
     }
 
     // ── Messages from extension ──

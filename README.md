@@ -77,6 +77,32 @@ Or press `Ctrl+Shift+V`.
 
 ---
 
+## ☁️ GitHub Codespaces Setup
+
+The easiest way for org members to get started — set API keys once as **Codespaces user secrets** and they're injected automatically into every session.
+
+### Option A — Automated (recommended)
+```bash
+pip install PyNaCl requests
+python3 scripts/setup-secrets.py
+```
+
+### Option B — Manual (GitHub UI)
+1. Go to **github.com → Settings → Codespaces → New secret**
+2. Create each secret below, scoped to this repository:
+
+| Secret Name | Provider | Where to get it |
+|---|---|---|
+| `OPENAI_API_KEY` | OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `ANTHROPIC_API_KEY` | Anthropic | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) |
+| `GOOGLE_API_KEY` | Google | [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) |
+
+3. Restart your Codespace — keys are auto-loaded as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`
+
+> **Note:** You only need to set secrets for the providers/models you plan to use.
+
+---
+
 ## 🏗️ Development
 
 ```bash

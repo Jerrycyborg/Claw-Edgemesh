@@ -1,0 +1,152 @@
+{
+  "name": "vibecode-tws",
+  "displayName": "VibeCode TWS",
+  "description": "AI coding assistant with selectable models and custom API key support for your organisation",
+  "version": "0.1.0",
+  "publisher": "VibeCode",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "ai",
+    "chat",
+    "openai",
+    "claude",
+    "gemini",
+    "copilot"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vibecode.openChat",
+        "title": "VibeCode: Open AI Chat"
+      },
+      {
+        "command": "vibecode.setApiKey",
+        "title": "VibeCode: Set API Key"
+      },
+      {
+        "command": "vibecode.selectModel",
+        "title": "VibeCode: Select AI Model"
+      },
+      {
+        "command": "vibecode.clearApiKey",
+        "title": "VibeCode: Clear API Key"
+      }
+    ],
+    "configuration": {
+      "title": "VibeCode TWS",
+      "properties": {
+        "vibecode.selectedModel": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "The AI model to use for completions",
+          "enum": [
+            "gpt-4o",
+            "gpt-4-turbo",
+            "gpt-3.5-turbo",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-haiku-20240307",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash"
+          ],
+          "enumDescriptions": [
+            "OpenAI GPT-4o (recommended)",
+            "OpenAI GPT-4 Turbo",
+            "OpenAI GPT-3.5 Turbo (fast & cheap)",
+            "Anthropic Claude 3.5 Sonnet",
+            "Anthropic Claude 3 Haiku (fast)",
+            "Google Gemini 1.5 Pro",
+            "Google Gemini 1.5 Flash (fast)"
+          ]
+        },
+        "vibecode.apiProvider": {
+          "type": "string",
+          "default": "openai",
+          "description": "The API provider. API key is stored securely per provider.",
+          "enum": [
+            "openai",
+            "anthropic",
+            "google"
+          ],
+          "enumDescriptions": [
+            "OpenAI (GPT models)",
+            "Anthropic (Claude models)",
+            "Google (Gemini models)"
+          ]
+        },
+        "vibecode.maxTokens": {
+          "type": "number",
+          "default": 2048,
+          "description": "Maximum tokens in the AI response"
+        },
+        "vibecode.temperature": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature (0 = deterministic, 2 = very creative)"
+        },
+        "vibecode.systemPrompt": {
+          "type": "string",
+          "default": "You are an expert software engineer and coding assistant. Be concise, precise, and helpful.",
+          "description": "System prompt sent to the AI model"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "vibecode.openChat",
+          "group": "vibecode"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "vibecode.openChat",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vibecode-sidebar",
+          "title": "VibeCode TWS",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vibecode-sidebar": [
+        {
+          "type": "webview",
+          "id": "vibecode.chatView",
+          "name": "AI Chat"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0"
+  }
+}

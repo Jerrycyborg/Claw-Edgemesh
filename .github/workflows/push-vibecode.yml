@@ -1,0 +1,47 @@
+name: Push VibeCode_TWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      pat:
+        description: "PAT with Contents:Write access to VibeCode_TWS"
+        required: true
+        type: string
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Claw-Edgemesh (contains staged VibeCode_TWS source)
+        uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config --global user.email "copilot@github.com"
+          git config --global user.name "GitHub Copilot"
+
+      - name: Clone VibeCode_TWS target repo
+        run: |
+          git clone "https://x-access-token:${{ inputs.pat }}@github.com/Jerrycyborg/VibeCode_TWS.git" /tmp/target
+
+      - name: Copy source into target
+        run: |
+          rsync -av --exclude='.git' .vibecode-stage/ /tmp/target/
+
+      - name: Commit and push to VibeCode_TWS
+        working-directory: /tmp/target
+        run: |
+          git add -A
+          git diff --cached --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "feat: initial VibeCode TWS VS Code extension
+
+          - 7 selectable AI models (GPT-4o, GPT-4 Turbo, GPT-3.5, Claude 3.5 Sonnet, Claude 3 Haiku, Gemini 1.5 Pro/Flash)
+          - Secure API key storage via VS Code SecretStorage
+          - Codespaces secrets support (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY)
+          - Chat panel webview, status bar, keyboard shortcut Ctrl+Shift+V
+
+          Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          git push "https://x-access-token:${{ inputs.pat }}@github.com/Jerrycyborg/VibeCode_TWS.git" main
+
+      - name: Done
+        run: echo "✅ VibeCode_TWS pushed successfully!"

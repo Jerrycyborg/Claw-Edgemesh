@@ -1,7 +1,7 @@
 <!-- SECTION: summary -->
 
-OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 + T-003 shipped.
-89/89 tests pass, build is clean. No open tasks.
+OpenClaw EdgeMesh control plane: all 6 milestones + T-001/002/003 + production hardening shipped.
+89/89 tests pass, build is clean. Ready for v0.2-alpha stabilization.
 
 <!-- /SECTION: summary -->
 
@@ -26,6 +26,7 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 + T-003 shippe
 | 4   | Task priority scheduling + per-node stats | 1fe4f75 | DONE   |
 | 5   | Prometheus /metrics + Docker              | 5eaa3aa | DONE   |
 | 6   | SSE GET /v1/events streaming              | c2d93e9 | DONE   |
+| 7   | Production hardening (Issues #1,3,5,6)    | 6f6c171 | DONE   |
 
 <!-- /SECTION: milestones -->
 
@@ -70,14 +71,16 @@ OpenClaw EdgeMesh control plane: all 6 milestones + T-001 + T-002 + T-003 shippe
 | Local (in-memory) | WORKING | Default, zero config                             |
 | Local (Redis)     | WORKING | EDGEMESH_STORE=redis + EDGEMESH_REDIS_URL        |
 | Docker Compose    | READY   | docker-compose.yml ships control-plane + Redis 7 |
-| GitHub            | PUSHED  | Jerrycyborg/Claw-Edgemesh @ 95f929c              |
+| Rate Limiting     | ENABLED | 100 req/min via @fastify/rate-limit              |
+| GitHub            | PUSHED  | Jerrycyborg/Claw-Edgemesh @ 6f6c171              |
 
 <!-- /SECTION: infra -->
 
 <!-- SECTION: gaps -->
 
-| Gap                                    | Severity | Task   |
-| -------------------------------------- | -------- | ------ |
-| SSE fan-out only within single process | low      | future |
+| Gap                                    | Severity | Task                |
+| -------------------------------------- | -------- | ------------------- |
+| SSE fan-out only within single process | low      | future              |
+| Redis claimTask race condition         | medium   | Issue #2 (deferred) |
 
 <!-- /SECTION: gaps -->
